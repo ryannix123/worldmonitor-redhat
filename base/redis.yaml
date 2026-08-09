@@ -48,6 +48,25 @@ spec:
             - allkeys-lru
             - --dir
             - /data
+            # Persist to the mounted PVC so the cache survives pod restarts.
+            # Without this, Redis runs pure in-memory: a Sandbox namespace
+            # idling out (or any redeploy) restarts the pod with an EMPTY cache,
+            # and every seeded panel reads "No data" until the hourly seeder
+            # CronJob re-warms it. AOF replays on startup so a restarted pod
+            # comes back with yesterday's data instead of blank.
+            #
+            # everysec: fsync once a second — durable enough for a cache, no
+            # per-write latency. auto-aof-rewrite keeps the append log compact
+            # despite the churn that allkeys-lru eviction generates on a cache
+            # workload (evictions write deletes to the AOF).
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --auto-aof-rewrite-percentage
+            - "100"
+            - --auto-aof-rewrite-min-size
+            - 64mb
           env:
             - name: REDIS_PASSWORD
               valueFrom:

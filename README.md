@@ -425,15 +425,37 @@ matter how they're configured. These are consequences of upstream's deployment
 architecture, not misconfiguration — documented here so nobody burns an evening
 rediscovering them.
 
-**Live Intelligence** — populated by `seed-gdelt-intel`, one of ~43 standalone
-Railway seed crons upstream runs separately from the app + relay
-(`scripts/railway-services.json` in the upstream repo lists them; their own
-runbook calls them "standalone seed crons, not bundled"). The seeder script is
-self-hostable in principle — it needs only Redis credentials and uses GDELT's
-free DOC API — but GDELT rate-limits per-IP aggressively enough that a
-single-address self-host cannot complete the six-topic sweep before the limit
-trips. It runs fine from upstream's Railway IP space; expect this panel to stay
-empty on a home or single-egress deployment.
+They fall into three root causes: **starved news pipeline** (standalone
+GDELT-fed seeders that a single egress IP can't complete — takes down Live
+Intelligence, AI Insights, and Security Advisories together), **SSRF-blocked
+relay path** (Force Posture, parts of Escalation Monitor), and **missing upstream
+microservices / weekly data** (Consumer Prices, COT). None is fixable with API
+keys or by waiting; each needs an upstream change or infrastructure the
+self-host doesn't have.
+
+**The news pipeline (Live Intelligence, AI Insights, and the news feed)** — three
+panels share one root cause, so they fail together. The chain is: standalone news
+seeders write headlines to Redis → the relay's `[Classify]` loop tags them via
+the LLM providers → AI Insights summarizes the tagged set. If step one produces
+nothing, the whole chain is starved.
+
+Step one is `seed-gdelt-intel` and its siblings — ~43 standalone Railway seed
+crons upstream runs separately from the app + relay (`scripts/railway-services.json`
+in the upstream repo lists them; their runbook calls them "standalone seed crons,
+not bundled"). They're self-hostable in principle — they need only Redis
+credentials and GDELT's free DOC API — but GDELT rate-limits per-IP aggressively
+enough that a single-address self-host cannot complete the multi-topic sweep
+before the limit trips. It runs fine from upstream's Railway IP space; on a home
+or single-egress deployment the news headlines never land.
+
+Downstream of that, **AI Insights renders UNAVAILABLE** not because the LLM chain
+is broken but because it has nothing to summarize. The tell is in the relay log:
+`[Classify]` shows `providers:openrouter,groq` with no auth errors, yet every
+cycle reports `0 titles, 0 classified` across every topic — healthy providers,
+empty input. **Live Intelligence** ("No recent articles for this topic") is the
+same starvation one step earlier in the chain. Adding LLM keys does nothing here;
+the missing piece is the news headlines, which need an egress IP GDELT hasn't
+rate-limited.
 
 **Force Posture and parts of Escalation Monitor** — the app fetches live
 military data through the relay (`WS_RELAY_URL`), but the sidecar's SSRF guard
@@ -448,8 +470,8 @@ fix is a one-line upstream change (allowlist `WS_RELAY_URL`'s origin alongside
 the Upstash one); until it lands, these panels are partial on any
 self-hosted deployment.
 
-**Security Advisories** — another standalone Railway seeder; same category as
-Live Intelligence.
+**Security Advisories** — another standalone Railway seeder; same category as the
+news pipeline above (starved on a single-egress self-host).
 
 **Consumer Prices** — the authoritative writer is upstream's separate
 `consumer-prices-core` microservice (a scrape → aggregate → publish pipeline),

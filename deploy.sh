@@ -380,4 +380,28 @@ if oc -n "$NS" get deploy/ollama >/dev/null 2>&1; then
   oc -n "$NS" exec "$OLLAMA_POD" -- ollama pull "$MODEL"
 fi
 
+# --- Kick off an initial seed ------------------------------------------------
+# The seeder CronJob only fires on its schedule (17 * * * *), so a fresh deploy
+# sits with an empty Redis cache until the top of the next hour — every seeded
+# panel reads "No data / Retrying" until then. Trigger one immediate run so the
+# dashboard populates within minutes of deploy instead of within an hour.
+#
+# Fire-and-forget: the full pass is ~20 min (150+ sequential seeders). We do NOT
+# --wait — the deploy is done once the app is up; seeding fills panels in the
+# background. Named with a timestamp so repeated deploys never collide on an
+# existing Job object (Jobs are immutable; a fixed name would fail on re-run).
+# Only runs after the rollout wait above, so the app API the seeders call
+# (WM_API_BASE_URL) is live before they start.
+if oc -n "$NS" get cronjob/worldmonitor-seeders >/dev/null 2>&1; then
+  SEED_JOB="seeders-init-$(date +%Y%m%d-%H%M%S)"
+  if oc -n "$NS" create job --from=cronjob/worldmonitor-seeders "$SEED_JOB" >/dev/null 2>&1; then
+    info "Started initial seed job ${SEED_JOB} (background, ~20 min to fully populate)"
+    info "  watch:  oc logs -f job/${SEED_JOB} | grep '→ seed-'"
+  else
+    info "Could not start seed job — panels will populate at the next cron tick (:17)"
+  fi
+else
+  info "No seeder CronJob in this overlay — skipping initial seed"
+fi
+
 info "Done."
