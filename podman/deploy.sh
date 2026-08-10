@@ -100,11 +100,14 @@ setup_env() {
 
   info "Paste each key and press Enter. Paste each one when prompted."
   echo
-  ask_key OPENROUTER_API_KEY "OpenRouter key (for the AI briefs)" required
-  ask_key UCDP_ACCESS_TOKEN  "UCDP token (armed-conflict data)"   optional
-  ask_key AISSTREAM_API_KEY  "AISStream key (live ships)"         optional
-  ask_key ACLED_EMAIL        "ACLED email"                        optional
-  ask_key ACLED_PASSWORD     "ACLED password"                     optional
+  ask_key OPENROUTER_API_KEY "OpenRouter key (for the AI briefs)"  required
+  ask_key UCDP_ACCESS_TOKEN  "UCDP token (armed-conflict data)"    optional
+  ask_key AISSTREAM_API_KEY  "AISStream key (live ships)"          optional
+  ask_key ACLED_EMAIL        "ACLED email"                         optional
+  ask_key ACLED_PASSWORD     "ACLED password"                      optional
+  ask_key FINNHUB_API_KEY    "Finnhub key (market data)"           optional
+  ask_key FRED_API_KEY       "FRED key (economic data)"            optional
+  ask_key GROQ_API_KEY       "Groq key (fast inference)"           optional
   echo
   ok "Saved to .env"
 }
