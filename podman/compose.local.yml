@@ -132,5 +132,99 @@ services:
       - redis
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Seeders — the missing scheduler (compose port of base/seeder-cronjob.yaml).
+  # ---------------------------------------------------------------------------
+  # The ais-relay runs ~35 seeders inline; the other 120+ standalone
+  # scripts/seed-*.mjs seeders need an external scheduler that self-hosted
+  # deploys don't have, so their panels render "no data" even with keys present.
+  # On OpenShift the worldmonitor-seeders CronJob (schedule 17 * * * *) fills
+  # that gap. Compose has no cron, so this loops run-seeders.sh: one pass on
+  # startup, then hourly.
+  #
+  # IMPORTANT: this uses the RELAY image (:relay-latest), not :latest. Per the
+  # CronJob — "Same relay image — it carries the scripts and their deps." The
+  # serving image has no scripts/ directory.
+  #
+  # Expectations:
+  #   • A full pass is ~20 min / 150+ sequential seeders — panels fill in
+  #     gradually. SEED_TIMEOUT caps each seeder at 90s here — the manifest uses
+  #     600s (fine for OpenShift's hourly cron + 3600s job ceiling), but locally
+  #     a dead-upstream seeder eating 600s stalls the whole sequential pass. 90s
+  #     is ample for any seeder that actually works; dead upstreams abandon fast.
+  #   • Seeders whose API key is absent self-report SKIP (by design). FINNHUB /
+  #     FRED / GROQ etc. must be in .env for their panels to seed.
+  #   • Sector Heatmap + BTC Regime + Macro Stress stay down regardless — dead
+  #     upstreams (Yahoo quoteSummary 401 etc.), not a seeding problem.
+  seeders:
+    image: quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+    platform: linux/arm64
+    pull_policy: missing
+    environment:
+      # --- Redis REST proxy -------------------------------------------------
+      # run-seeders.sh prefers REDIS_TOKEN over UPSTASH_REDIS_REST_TOKEN and
+      # fails loudly without one; set both.
+      REDIS_TOKEN: "${REDIS_TOKEN}"
+      UPSTASH_REDIS_REST_URL: "http://redis-rest:8080"
+      UPSTASH_REDIS_REST_TOKEN: "${REDIS_TOKEN}"
+      UPSTASH_ALLOW_INSECURE_HTTP: "true"
+      # --- Point seeders at THIS deployment's app API -----------------------
+      # The CronJob sets all three names because the seeders don't agree on one;
+      # mirror that rather than guess which is read.
+      WM_API_BASE_URL: "http://worldmonitor:8080"
+      API_BASE_URL: "http://worldmonitor:8080"
+      WM_INTERNAL_API_BASE: "http://worldmonitor:8080"
+      # --- Relay connection (auth-gated, same secret the relay started with) -
+      # Manifest key WORLDMONITOR_RELAY_KEY == this stack's RELAY_SHARED_SECRET.
+      RELAY_URL: "http://ais-relay:3004"
+      WORLDMONITOR_RELAY_KEY: "${RELAY_SHARED_SECRET}"
+      RELAY_SHARED_SECRET: "${RELAY_SHARED_SECRET}"
+      # --- Per-seeder cap (seconds), matching the manifest ------------------
+      SEED_TIMEOUT: "90"
+      # --- LLM routing for forecast/synthesis seeders (mirror the app) ------
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      LLM_REASONING_PROVIDER: "openrouter"
+      LLM_REASONING_MODEL: "anthropic/claude-sonnet-4.5"
+      LLM_TOOL_PROVIDER: "openrouter"
+      LLM_TOOL_MODEL: "anthropic/claude-haiku-4.5"
+      FORECAST_LLM_PROVIDER_ORDER: "openrouter"
+      FORECAST_LLM_MODEL_OPENROUTER: "anthropic/claude-haiku-4.5"
+      USAGE_TELEMETRY: "1"
+      # --- Provider API keys. Seeders without their key self-skip (SKIP). ----
+      UCDP_ACCESS_TOKEN: "${UCDP_ACCESS_TOKEN:-}"
+      AISSTREAM_API_KEY: "${AISSTREAM_API_KEY:-}"
+      ACLED_EMAIL: "${ACLED_EMAIL:-}"
+      ACLED_PASSWORD: "${ACLED_PASSWORD:-}"
+      FINNHUB_API_KEY: "${FINNHUB_API_KEY:-}"
+      FRED_API_KEY: "${FRED_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+    depends_on:
+      redis-rest:
+        condition: service_started
+      worldmonitor:
+        condition: service_started
+      ais-relay:
+        condition: service_started
+    # `cd /app` first — the manifest does this, and it's the fix for the
+    # "scripts/run-seeders.sh: No such file" failure. Shim preload keeps the
+    # manifest's absent-file fallback (a missing shim is a warning, not fatal).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cd /app
+        if [ -f /app/srh-compat-shim.cjs ]; then
+          export NODE_OPTIONS="--require /app/srh-compat-shim.cjs"
+          echo "[seeders] SRH shim preloaded"
+        else
+          echo "[seeders] WARN: /app/srh-compat-shim.cjs absent - running without it"
+        fi
+        while true; do
+          echo "[seeders] starting pass at $(date -u +%FT%TZ)"
+          sh scripts/run-seeders.sh || echo "[seeders] pass exited non-zero (per-seeder SKIP/FAIL is expected)"
+          echo "[seeders] pass complete; sleeping 1h"
+          sleep 3600
+        done
+    restart: unless-stopped
+
 volumes:
   redis-data:
