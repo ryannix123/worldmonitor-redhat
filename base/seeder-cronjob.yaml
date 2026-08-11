@@ -69,6 +69,35 @@ spec:
                   else
                     echo "[cronjob] WARN: /app/srh-compat-shim.cjs absent - running without it"
                   fi
+
+                  # --- Priority pass: demo-critical panels first ---------------
+                  # run-seeders.sh globs seed-*.mjs alphabetically, so market /
+                  # breadth / fear-greed / earnings seed LAST — behind slow
+                  # reference feeds (climate-zone-normals ~4min, comtrade up to
+                  # the 600s cap) that happen to sort early. On a fresh deploy or
+                  # a demo, that means the panels an audience actually looks at
+                  # are the last to fill.
+                  #
+                  # Seed those few explicitly first so they populate within a
+                  # minute or two. The full runner below then does the complete
+                  # set; re-running this handful is harmless — each seeder is
+                  # idempotent and just rewrites the same Redis key. The -f guard
+                  # means a renamed/missing seeder logs and falls through to its
+                  # normal slot in the full run rather than erroring. Override the
+                  # default list at runtime with SEED_PRIORITY.
+                  PRIORITY_SEEDERS="${SEED_PRIORITY:-seed-market-quotes seed-market-breadth seed-fear-greed seed-earnings-calendar seed-sector-heatmap seed-commodity-quotes seed-crypto-quotes}"
+                  echo "[cronjob] priority pass: $PRIORITY_SEEDERS"
+                  for s in $PRIORITY_SEEDERS; do
+                    if [ -f "scripts/${s}.mjs" ]; then
+                      echo "→ [priority] ${s}.mjs"
+                      node "scripts/${s}.mjs" || echo "  [priority] ${s} failed — full run will retry"
+                    else
+                      echo "  [priority] scripts/${s}.mjs absent — skipping (full run covers it)"
+                    fi
+                  done
+
+                  # --- Full pass: the image's own runner does everything -------
+                  echo "[cronjob] full pass: scripts/run-seeders.sh"
                   sh scripts/run-seeders.sh
               env:
                 # run-seeders.sh prefers REDIS_TOKEN over UPSTASH_REDIS_REST_TOKEN

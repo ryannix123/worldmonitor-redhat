@@ -19,10 +19,16 @@ Usage: ./deploy.sh [options]
   -o OVERLAY       Overlay path (default: overlays/sno).
   -d               Delete (tear down) what the overlay created, then exit.
                    Prompts for confirmation unless --yes is given.
+  -s               Seed now (break-glass): reseed Redis without redeploying.
+                   Suspends the hourly CronJob, clears any orphaned seed jobs,
+                   fires ONE clean pass, then resumes the CronJob. Use when
+                   panels read "No data" and you don't want a full redeploy.
       --keep-secrets   With -d, keep the generated secrets (Redis creds, relay
                        secret, API keys). Recommended — regenerating Redis
                        credentials causes a password mismatch on next deploy.
       --yes            Skip the confirmation prompt (for scripted teardown).
+      --wait-seed      With deploy or -s, block until the seed pass completes
+                       and print a summary, instead of returning immediately.
   -h               This help.
 
 Environment:
@@ -40,13 +46,17 @@ Examples:
   ./deploy.sh -o overlays/sandbox -e OPENROUTER_API_KEY=sk-or-v1-...
   ./deploy.sh -o overlays/sandbox-quay -d --keep-secrets   # tear down, keep creds
   ./deploy.sh -o overlays/sandbox-quay -d --yes            # tear down everything
+  ./deploy.sh -o overlays/sandbox-quay -s                  # break-glass reseed
+  ./deploy.sh -o overlays/sandbox-quay -s --wait-seed      # reseed and wait for it
 USAGE
 }
 
 declare -a CLI_KEYS=()
 DO_DELETE=false
+DO_SEED=false
 KEEP_SECRETS=false
 ASSUME_YES=false
+WAIT_SEED=false
 
 # getopts handles only short options; pull the long ones out of argv first.
 declare -a ARGV=()
@@ -54,12 +64,13 @@ for a in "$@"; do
   case "$a" in
     --keep-secrets) KEEP_SECRETS=true ;;
     --yes)          ASSUME_YES=true ;;
+    --wait-seed)    WAIT_SEED=true ;;
     *)              ARGV+=("$a") ;;
   esac
 done
 set -- "${ARGV[@]}"
 
-while getopts ":e:E:o:dh" opt; do
+while getopts ":e:E:o:dsh" opt; do
   case "$opt" in
     e)
       [[ "$OPTARG" == *=* ]] || { echo "-e expects KEY=VALUE, got: $OPTARG"; exit 1; }
@@ -89,6 +100,7 @@ while getopts ":e:E:o:dh" opt; do
       ;;
     o) OVERLAY="$OPTARG" ;;
     d) DO_DELETE=true ;;
+    s) DO_SEED=true ;;
     h) usage; exit 0 ;;
     \?) echo "Unknown option: -$OPTARG"; usage; exit 1 ;;
     :) echo "-$OPTARG requires an argument"; usage; exit 1 ;;
@@ -109,6 +121,76 @@ oc whoami >/dev/null || { echo "Not logged in. Run: oc login ..."; exit 1; }
 
 NS="$(oc project -q)"
 [[ -d "$OVERLAY" ]] || { echo "No such overlay: $OVERLAY"; exit 1; }
+
+# --- Seeding helper ----------------------------------------------------------
+# One clean seed pass, collision-proof. Today's failure mode was two passes
+# running at once: the deploy-time init job and the :17 CronJob tick stacking
+# on each other, each taking the other's per-key Redis locks and both leaving
+# the contested keys (market-breadth, fear-greed) unseeded. This function makes
+# a single pass the only pass:
+#   1. suspend the CronJob so no scheduled tick can start mid-pass
+#   2. delete any finished/orphaned seeder jobs so locks from a dead pass clear
+#   3. create ONE fresh job and (optionally) wait for it
+#   4. resume the CronJob on the way out — ALWAYS, even on failure (trap)
+#
+# Returns without waiting unless WAIT_SEED=true. Safe to call from deploy or -s.
+run_seed_pass() {
+  oc -n "$NS" get cronjob/worldmonitor-seeders >/dev/null 2>&1 || {
+    info "No seeder CronJob in this overlay — skipping seed"
+    return 0
+  }
+
+  # Resume-on-exit guard: if anything below fails, we must not leave the hourly
+  # CronJob suspended (that would silently stop all future refreshes).
+  _resume_cron() {
+    oc -n "$NS" patch cronjob/worldmonitor-seeders \
+      -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true
+  }
+  trap _resume_cron RETURN
+
+  info "Suspending hourly CronJob to run one uncontested pass"
+  oc -n "$NS" patch cronjob/worldmonitor-seeders \
+    -p '{"spec":{"suspend":true}}' >/dev/null 2>&1 || true
+
+  # Clear prior seeder jobs (init-*, manual-*, or CronJob-spawned). A completed
+  # job's pod may still hold a stale per-key lock; deleting the jobs releases
+  # them so this pass starts on a clean field.
+  local OLD
+  OLD="$(oc -n "$NS" get jobs \
+    -l app.kubernetes.io/name=worldmonitor-seeders -o name 2>/dev/null || true)"
+  if [[ -n "$OLD" ]]; then
+    info "Clearing $(echo "$OLD" | wc -l | tr -d ' ') prior seed job(s)"
+    # shellcheck disable=SC2086
+    oc -n "$NS" delete $OLD --ignore-not-found >/dev/null 2>&1 || true
+  fi
+
+  local SEED_JOB="seeders-init-$(date +%Y%m%d-%H%M%S)"
+  if ! oc -n "$NS" create job --from=cronjob/worldmonitor-seeders "$SEED_JOB" >/dev/null 2>&1; then
+    info "Could not start seed job — will populate at the next cron tick (:17)"
+    return 1   # trap resumes the CronJob
+  fi
+  info "Started seed job ${SEED_JOB}"
+
+  if [[ "$WAIT_SEED" == true ]]; then
+    info "Waiting for seed pass to finish (~20 min; slow reference feeds first)"
+    # activeDeadlineSeconds on the job caps a pathological run; give oc headroom.
+    if oc -n "$NS" wait --for=condition=complete "job/${SEED_JOB}" \
+         --timeout=45m >/dev/null 2>&1; then
+      info "Seed pass complete:"
+      oc -n "$NS" logs "job/${SEED_JOB}" 2>/dev/null | grep -E '^Done:' | tail -1 \
+        | sed 's/^/  /' || true
+    else
+      info "Seed job did not report complete within 45m — check:"
+      info "  oc -n $NS logs job/${SEED_JOB} | tail -20"
+      return 1   # trap resumes the CronJob
+    fi
+  else
+    info "  watch:  oc -n $NS logs -f job/${SEED_JOB} | grep '→ seed-'"
+    info "  panels populate in the background; refresh the tab as they fill"
+  fi
+  # trap _resume_cron runs here on normal return too — CronJob comes back on.
+  return 0
+}
 
 # --- Teardown (-d) -----------------------------------------------------------
 if [[ "$DO_DELETE" == true ]]; then
@@ -162,6 +244,16 @@ if [[ "$DO_DELETE" == true ]]; then
   echo "Teardown complete. Remaining worldmonitor objects (should be empty or"
   echo "secrets-only):"
   oc get all,pvc,secret,configmap -l app.kubernetes.io/part-of=worldmonitor -n "$NS" 2>/dev/null || true
+  exit 0
+fi
+
+# --- Seed now (-s), break-glass ---------------------------------------------
+# Reseed an already-deployed stack without touching manifests, images, or
+# secrets. This is the "panels went blank and I don't want to redeploy" path.
+if [[ "$DO_SEED" == true ]]; then
+  info "Break-glass reseed in namespace: $NS"
+  run_seed_pass || true   # nonzero is already reported inside; CronJob resumed by trap
+  info "Done."
   exit 0
 fi
 
@@ -381,27 +473,21 @@ if oc -n "$NS" get deploy/ollama >/dev/null 2>&1; then
 fi
 
 # --- Kick off an initial seed ------------------------------------------------
-# The seeder CronJob only fires on its schedule (17 * * * *), so a fresh deploy
-# sits with an empty Redis cache until the top of the next hour — every seeded
-# panel reads "No data / Retrying" until then. Trigger one immediate run so the
-# dashboard populates within minutes of deploy instead of within an hour.
+# A fresh deploy has an empty Redis cache, so every seeded panel reads
+# "No data / Retrying" until a pass runs. The seeder CronJob only fires at :17,
+# which could be up to an hour away — and if it fires WHILE this initial pass is
+# still running (a ~20 min pass can easily straddle a :17 tick), the two passes
+# collide and fight over per-key locks, which is how panels stay half-seeded.
 #
-# Fire-and-forget: the full pass is ~20 min (150+ sequential seeders). We do NOT
-# --wait — the deploy is done once the app is up; seeding fills panels in the
-# background. Named with a timestamp so repeated deploys never collide on an
-# existing Job object (Jobs are immutable; a fixed name would fail on re-run).
-# Only runs after the rollout wait above, so the app API the seeders call
-# (WM_API_BASE_URL) is live before they start.
-if oc -n "$NS" get cronjob/worldmonitor-seeders >/dev/null 2>&1; then
-  SEED_JOB="seeders-init-$(date +%Y%m%d-%H%M%S)"
-  if oc -n "$NS" create job --from=cronjob/worldmonitor-seeders "$SEED_JOB" >/dev/null 2>&1; then
-    info "Started initial seed job ${SEED_JOB} (background, ~20 min to fully populate)"
-    info "  watch:  oc logs -f job/${SEED_JOB} | grep '→ seed-'"
-  else
-    info "Could not start seed job — panels will populate at the next cron tick (:17)"
-  fi
-else
-  info "No seeder CronJob in this overlay — skipping initial seed"
-fi
+# run_seed_pass() handles both problems: it suspends the CronJob for the
+# duration of one clean pass and resumes it afterward, so the initial seed and
+# the hourly schedule can never overlap. Only runs after the rollout wait above,
+# so the app API the seeders call (WM_API_BASE_URL) is live before they start.
+#
+# By default this returns immediately (fire-and-forget). Pass --wait-seed to
+# block until the pass completes — useful for scripted "deploy then verify".
+# `|| true`: a seed hiccup must not fail an otherwise-successful deploy, and the
+# CronJob is resumed by the function's own RETURN trap regardless.
+run_seed_pass || true
 
 info "Done."
