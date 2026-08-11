@@ -85,7 +85,7 @@ spec:
                   # means a renamed/missing seeder logs and falls through to its
                   # normal slot in the full run rather than erroring. Override the
                   # default list at runtime with SEED_PRIORITY.
-                  PRIORITY_SEEDERS="${SEED_PRIORITY:-seed-market-quotes seed-market-breadth seed-fear-greed seed-earnings-calendar seed-sector-heatmap seed-commodity-quotes seed-crypto-quotes}"
+                  PRIORITY_SEEDERS="${SEED_PRIORITY:-seed-market-quotes seed-market-breadth seed-fear-greed seed-earnings-calendar seed-economic-calendar seed-sector-heatmap seed-commodity-quotes seed-crypto-quotes}"
                   echo "[cronjob] priority pass: $PRIORITY_SEEDERS"
                   for s in $PRIORITY_SEEDERS; do
                     if [ -f "scripts/${s}.mjs" ]; then
@@ -131,9 +131,17 @@ spec:
                     secretKeyRef:
                       name: worldmonitor-relay
                       key: WORLDMONITOR_RELAY_KEY
-                # Per-seeder cap (seconds). Bundles self-bound and are exempt.
+                # Per-seeder cap (seconds) for STANDALONE seeders; bundles are
+                # self-bound and exempt. Lowered from 600 to 180: the pass runs
+                # seeders sequentially, so one slow standalone seeder on a dead/
+                # slow upstream (climate-zone-normals, comtrade-bilateral-hs4)
+                # blocks every seeder after it for the full cap. run-seeders.sh
+                # notes standalone seeders' real runtime sits well under this,
+                # so 180s abandons the pathological ones fast without false-
+                # killing legitimate work — keeping demo panels from stalling
+                # behind a hung reference feed on a fresh deploy.
                 - name: SEED_TIMEOUT
-                  value: "600"
+                  value: "180"
               envFrom:
                 # Provider API keys. Seeders without their key self-skip.
                 - secretRef:
