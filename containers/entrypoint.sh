@@ -60,9 +60,12 @@ fi
 # existing deployment that predates the variable keeps running; set it (32+
 # random chars) in the OpenShift Secret / compose .env, then feel free to make
 # this fatal to match upstream.
-if [ "${#WM_SESSION_SECRET}" -lt 32 ]; then
+# (`${VAR:-}` first: under `set -u`, ${#VAR} on an unset variable is fatal.)
+_wm_session_secret="${WM_SESSION_SECRET:-}"
+if [ "${#_wm_session_secret}" -lt 32 ]; then
   log "WARN: WM_SESSION_SECRET is unset or shorter than 32 chars — upstream requires it; set it in your Secret/.env"
 fi
+unset _wm_session_secret
 
 # --- nginx real-IP include --------------------------------------------------
 # nginx.conf `include`s /tmp/nginx-realip.conf (upstream change, ~Sep 2026).
