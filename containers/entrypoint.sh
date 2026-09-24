@@ -17,7 +17,9 @@
 # Preserved from upstream's entrypoint.sh:
 #   - /run/secrets → env bridge
 #   - per-start random LOCAL_API_TOKEN
+#   - render of /tmp/nginx-realip.conf (WM_TRUSTED_PROXY_CIDRS)
 #   - envsubst of nginx.conf.template
+#   - WM_SESSION_SECRET length check (warn-only here; see below)
 #
 # That random-token-per-start is a genuinely good design: nginx injects it on
 # the private 127.0.0.1 hop to the sidecar, and it never outlives the process.
@@ -51,6 +53,25 @@ if [ -z "${LOCAL_API_TOKEN:-}" ]; then
   LOCAL_API_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")"
   export LOCAL_API_TOKEN
 fi
+
+# --- Session secret ---------------------------------------------------------
+# Upstream's entrypoint runs docker/validate-session-secret.mjs and exits 1 if
+# WM_SESSION_SECRET is shorter than 32 chars. We WARN instead of failing so an
+# existing deployment that predates the variable keeps running; set it (32+
+# random chars) in the OpenShift Secret / compose .env, then feel free to make
+# this fatal to match upstream.
+if [ "${#WM_SESSION_SECRET}" -lt 32 ]; then
+  log "WARN: WM_SESSION_SECRET is unset or shorter than 32 chars — upstream requires it; set it in your Secret/.env"
+fi
+
+# --- nginx real-IP include --------------------------------------------------
+# nginx.conf `include`s /tmp/nginx-realip.conf (upstream change, ~Sep 2026).
+# Upstream's entrypoint renders it from WM_TRUSTED_PROXY_CIDRS: set_real_ip_from
+# + real_ip_header X-Forwarded-For when set, a comment-only file when unset.
+# On OpenShift, set WM_TRUSTED_PROXY_CIDRS to the router/pod network so per-IP
+# rate limits see the real client rather than the router. Must run before
+# nginx starts; the file is written to /tmp, which is already writable.
+node /app/render-nginx-realip.mjs
 
 # --- nginx config -----------------------------------------------------------
 # Only these two are substituted. A bare `envsubst` with no argument would

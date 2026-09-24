@@ -112,6 +112,15 @@ jobs:
           # which --ignore-scripts skips). Fail here, with a readable message,
           # if upstream renames or removes that script — not deep in the build.
           node -e "const s=require('$RUNNER_TEMP/upstream/package.json').scripts||{}; if(!s['inventory:facts']){console.error('::error::upstream package.json has no inventory:facts script at this SHA');process.exit(1)}"
+          # Files the Containerfile COPYs by explicit path. If upstream moves
+          # one, fail here with its name rather than as an opaque COPY error.
+          for f in scripts/generate-inventory-facts.mjs docker/render-nginx-realip.mjs \
+                   src-tauri/sidecar/local-api-server.mjs docker/nginx.conf; do
+            [ -f "$RUNNER_TEMP/upstream/$f" ] \
+              || { echo "::error::upstream $f not found at this SHA"; exit 1; }
+          done
+          [ -d "$RUNNER_TEMP/upstream/shared" ] \
+            || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
 
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10" \
