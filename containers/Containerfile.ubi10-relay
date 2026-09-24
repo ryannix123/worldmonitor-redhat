@@ -34,6 +34,16 @@ COPY package.json package-lock.json ./
 # and applied at scan time via .grype.yaml. See README "On the CVE story".
 RUN npm ci --omit=dev --ignore-scripts
 
+# The relay's requireShared() loads scripts/shared/inventory-facts.generated.json,
+# a build artifact upstream deliberately does not commit. The same generator the
+# app image runs writes it (plus api/_inventory-facts.generated.js and
+# docs/generated/stats.json) from the tracked shared/product-facts.generated.json.
+# Copy the tree in AFTER npm ci so dependency installs stay cached, run the
+# generator here, and let the runtime stage copy scripts/ and shared/ from this
+# stage — the same pattern as upstream's own Dockerfile.
+COPY . .
+RUN node scripts/generate-inventory-facts.mjs
+
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS final
 
@@ -56,14 +66,14 @@ WORKDIR /app
 
 # node_modules from the builder, plus the relay script and its lib deps.
 COPY --from=builder /build/node_modules ./node_modules
-COPY scripts ./scripts
-# Upstream added a top-level shared/ directory that ais-relay.cjs now requires
-# via `require('../shared/...')` — chokepoint-traffic-anomaly, chokepoint-
-# threat-levels, ais-vessel-type, corridor-risk, ais-watchdog (as of 158fd6f,
-# 2026-09-24). It must sit BESIDE scripts/ so the relative path resolves to
-# /app/shared/. The nightly smoke test caught the missing dir as
-# MODULE_NOT_FOUND at startup.
-COPY shared ./shared
+# scripts/ and shared/ come from the BUILDER stage, not the build context, so
+# they include the generated inventory-facts JSON the relay requires at start.
+# ais-relay.cjs requires both `./shared/*.cjs` (under scripts/) and
+# `../shared/*.js` (top-level, added upstream ~Sep 2026: chokepoint-traffic-
+# anomaly, chokepoint-threat-levels, ais-vessel-type, corridor-risk,
+# ais-watchdog), so shared/ must sit BESIDE scripts/ under /app.
+COPY --from=builder /build/scripts ./scripts
+COPY --from=builder /build/shared ./shared
 COPY package.json ./
 
 # Arbitrary-UID: group-0 ownership + group-writable on the app dir.

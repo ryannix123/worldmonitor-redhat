@@ -117,7 +117,20 @@ COPY --from=builder /build/src-tauri/sidecar/package.json ./package.json
 COPY --from=runtime-deps /build/node_modules ./node_modules
 COPY --from=builder /build/api ./api
 COPY --from=builder /build/data ./data
+# Upstream's top-level shared/ (added ~Sep 2026): the sidecar imports
+# shared/llm-health-providers.js at startup, and api/ handlers may import
+# ../shared/* at request time. Copied from the builder so it includes the
+# generated files, not just the tracked ones.
+COPY --from=builder /build/shared ./shared
 COPY --from=builder /build/dist /usr/share/nginx/html
+
+# The sidecar resolves its resource root as
+#   LOCAL_API_RESOURCE_DIR || dirname(local-api-server.mjs)/../..
+# Upstream keeps the file at src-tauri/sidecar/, so ../.. is the repo root.
+# We copy it flat to /app, which would make ../.. resolve to / — so pin the
+# root explicitly. api/ and data/ are looked up under the same root, which
+# they already are.
+ENV LOCAL_API_RESOURCE_DIR=/app
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf.template
 # --- SRH path-style Redis GET compatibility ---------------------------------
