@@ -57,6 +57,13 @@ WORKDIR /app
 # node_modules from the builder, plus the relay script and its lib deps.
 COPY --from=builder /build/node_modules ./node_modules
 COPY scripts ./scripts
+# Upstream added a top-level shared/ directory that ais-relay.cjs now requires
+# via `require('../shared/...')` — chokepoint-traffic-anomaly, chokepoint-
+# threat-levels, ais-vessel-type, corridor-risk, ais-watchdog (as of 158fd6f,
+# 2026-09-24). It must sit BESIDE scripts/ so the relative path resolves to
+# /app/shared/. The nightly smoke test caught the missing dir as
+# MODULE_NOT_FOUND at startup.
+COPY shared ./shared
 COPY package.json ./
 
 # Arbitrary-UID: group-0 ownership + group-writable on the app dir.

@@ -44,6 +44,15 @@ RUN npm ci --ignore-scripts
 
 COPY . .
 
+# Upstream generates api/_inventory-facts.generated.js in its `postinstall`
+# hook (`npm run inventory:facts`). `npm ci --ignore-scripts` above skips that
+# on purpose — we do not want 1,600+ packages running lifecycle hooks — so run
+# the one generator we actually need, explicitly. It is plain Node, offline,
+# and must come after `COPY . .` because it lives in scripts/. Load-bearing:
+# api/product-catalog.js imports the file, so a failure here must fail the
+# build (the nightly caught exactly this on 2026-09-24 at upstream 158fd6f).
+RUN npm run inventory:facts
+
 RUN node docker/build-handlers.mjs
 
 # Upstream removed `build:content-corpus` (present when this was written, gone

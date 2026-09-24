@@ -39,13 +39,16 @@ jobs:
       - id: pin
         run: |
           set -euo pipefail
-          # Precedence: explicit dispatch input > pinned SHA > branch ref.
+          # Precedence: explicit dispatch input > UPSTREAM_SHA > UPSTREAM_REF > main.
           #
-          # UPSTREAM_SHA is the whole point of pinning: the nightly must build a
-          # known-good commit, not whatever landed on main overnight. Reading
-          # UPSTREAM_REF first defeated that — upstream deleting the
-          # `build:content-corpus` npm script broke the nightly directly instead
-          # of surfacing as a reviewed upstream-sync PR.
+          # Policy (2026-09-24): the nightly FLOATS on upstream main. Upstream
+          # ships daily and cuts no release tags, so main is the only meaningful
+          # target. The trade-off is that an upstream layout change can break the
+          # build (e.g. a renamed npm script, a new top-level directory) — that
+          # is acceptable because `manifest` only advances `latest` after every
+          # image builds AND passes its smoke test, so a red run leaves the
+          # previous good images in place. Set UPSTREAM_SHA in upstream.env to
+          # freeze on a known-good commit (e.g. before a demo or recording).
           if [ -n "${{ inputs.ref }}" ]; then
             REF="${{ inputs.ref }}"
           elif [ -f upstream.env ]; then
@@ -86,7 +89,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Upstream source at the pinned SHA, plus this repo's containers/ dir.
-      - name: Fetch upstream at pinned SHA
+      - name: Fetch upstream at resolved SHA
         run: |
           set -euo pipefail
           # This repo's files are at $GITHUB_WORKSPACE from actions/checkout.
@@ -103,6 +106,12 @@ jobs:
           git clone --filter=blob:none --no-checkout \
             "https://github.com/${UPSTREAM_REPO}.git" "$RUNNER_TEMP/upstream"
           git -C "$RUNNER_TEMP/upstream" checkout --detach "${{ needs.resolve.outputs.sha }}"
+
+          # The Containerfile runs `npm run inventory:facts` to produce
+          # api/_inventory-facts.generated.js (upstream does it in postinstall,
+          # which --ignore-scripts skips). Fail here, with a readable message,
+          # if upstream renames or removes that script — not deep in the build.
+          node -e "const s=require('$RUNNER_TEMP/upstream/package.json').scripts||{}; if(!s['inventory:facts']){console.error('::error::upstream package.json has no inventory:facts script at this SHA');process.exit(1)}"
 
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10" \
@@ -239,7 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch upstream at pinned SHA
+      - name: Fetch upstream at resolved SHA
         run: |
           set -euo pipefail
           REPO="$GITHUB_WORKSPACE"
@@ -248,6 +257,12 @@ jobs:
           git clone --filter=blob:none --no-checkout \
             "https://github.com/${UPSTREAM_REPO}.git" "$RUNNER_TEMP/upstream"
           git -C "$RUNNER_TEMP/upstream" checkout --detach "${{ needs.resolve.outputs.sha }}"
+          # scripts/ais-relay.cjs requires modules from a top-level shared/
+          # directory (added upstream, seen at 158fd6f) that the Containerfile
+          # COPYs beside scripts/. Assert it exists so a future upstream move
+          # fails here with a clear message, not as MODULE_NOT_FOUND in smoke.
+          [ -d "$RUNNER_TEMP/upstream/shared" ] \
+            || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10-relay" \
              "$RUNNER_TEMP/upstream/containers/"
@@ -391,7 +406,7 @@ jobs:
       # Unlike the app and relay, this image's source file lives in the
       # UPSTREAM tree (docker/redis-rest-proxy.mjs), not this repo. Only the
       # Containerfile is copied across.
-      - name: Fetch upstream at pinned SHA
+      - name: Fetch upstream at resolved SHA
         run: |
           set -euo pipefail
           REPO="$GITHUB_WORKSPACE"
