@@ -1,0 +1,9 @@
+[Unit]
+Description=World Monitor appliance — weekly reboot, Sunday 04:30 local
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

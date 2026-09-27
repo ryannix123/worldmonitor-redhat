@@ -10,6 +10,12 @@
 #   Stop:   podman compose -f compose.local.yml down
 #
 # Reads secrets from a file named .env in this same directory.
+#
+# pull_policy: missing on the Quay images is deliberate — `./deploy.sh` never
+# surprises you with a new build. It also means a plain `up -d` will NOT pick
+# up a newer tag: `./deploy.sh -update` (compose pull + up) is the only path
+# that moves ALL THREE images together. Pulling one by hand leaves the others
+# stale, which is easy to miss because the tags still say "latest".
 # =============================================================================
 services:
   worldmonitor:
@@ -72,6 +78,19 @@ services:
       # docker-compose.yml wiring.
       WS_RELAY_URL: "http://ais-relay:3004"
       RELAY_SHARED_SECRET: "${RELAY_SHARED_SECRET}"
+      # The relay's warm-pings (chokepoint status, service statuses, the feed
+      # digest) authenticate with X-WorldMonitor-Key, which the gateway checks
+      # against ITS OWN WORLDMONITOR_RELAY_KEY (server/gateway.ts
+      # isRelayWarmPingRequest). Since upstream #3541 there is no Origin-trust
+      # fallback, so the same value must be set on the app AND the relay.
+      WORLDMONITOR_RELAY_KEY: "${RELAY_SHARED_SECRET}"
+      # --- Digest budget (self-hosted) --------------------------------------
+      # Upstream hard-codes a 10s feed-fetch budget derived from Vercel's 25s
+      # edge ceiling; a single sidecar can't fetch 245 feeds in 10s, so every
+      # rebuild aborts and the footer says "stale". Our Containerfile makes the
+      # two constants env-tunable; images without the patch ignore these.
+      DIGEST_RESPONSE_LIMIT_MS: "75000"
+      DIGEST_ADOPTION_BUDGET_MS: "30000"
       # --- Browser session auth --------------------------------------------
       # Without these the app can't issue a wm-session cookie, so key-gated
       # endpoints (risk scores, theater posture, Country Instability, AI
@@ -95,6 +114,10 @@ services:
       # The relay refuses to start without this (FATAL). Generated into .env by
       # deploy.sh; on OpenShift it comes from the worldmonitor-relay Secret.
       RELAY_SHARED_SECRET: "${RELAY_SHARED_SECRET}"
+      # Same value as the app's WORLDMONITOR_RELAY_KEY (see the app service).
+      # Without it the relay logs "warm-pings will 401" at boot and every
+      # cache-warm it sends is rejected.
+      WORLDMONITOR_RELAY_KEY: "${RELAY_SHARED_SECRET}"
       UPSTASH_REDIS_REST_URL: "http://redis-rest:8080"
       UPSTASH_REDIS_REST_TOKEN: "${REDIS_TOKEN}"
       UPSTASH_ALLOW_INSECURE_HTTP: "true"

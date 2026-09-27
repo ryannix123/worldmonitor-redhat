@@ -1,0 +1,39 @@
+# World Monitor — the "missing scheduler": one full seed pass at start, then
+# hourly (compose port of the OpenShift CronJob). Uses the RELAY image because
+# it carries scripts/. The loop lives in seed-loop.sh so it is easy to edit.
+# No healthcheck: it is a batch loop, not a server.
+[Unit]
+Description=World Monitor — hourly seeders
+Requires=worldmonitor.service
+After=worldmonitor.service
+
+[Container]
+ContainerName=seeders
+Image=quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+AutoUpdate=registry
+Network=worldmonitor.network
+EnvironmentFile=%h/.config/worldmonitor/.env
+Volume=%h/.config/worldmonitor/seed-loop.sh:/seed-loop.sh:ro,Z
+Entrypoint=/bin/sh
+Exec=/seed-loop.sh
+Environment=UPSTASH_REDIS_REST_URL=http://redis-rest:8080
+Environment=UPSTASH_ALLOW_INSECURE_HTTP=true
+Environment=WM_API_BASE_URL=http://worldmonitor:8080
+Environment=API_BASE_URL=http://worldmonitor:8080
+Environment=WM_INTERNAL_API_BASE=http://worldmonitor:8080
+Environment=RELAY_URL=http://ais-relay:3004
+Environment=SEED_TIMEOUT=90
+Environment=LLM_REASONING_PROVIDER=openrouter
+Environment=LLM_REASONING_MODEL=anthropic/claude-sonnet-4.5
+Environment=LLM_TOOL_PROVIDER=openrouter
+Environment=LLM_TOOL_MODEL=anthropic/claude-haiku-4.5
+Environment=FORECAST_LLM_PROVIDER_ORDER=openrouter
+Environment=FORECAST_LLM_MODEL_OPENROUTER=anthropic/claude-haiku-4.5
+Environment=USAGE_TELEMETRY=1
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,49 @@
+# World Monitor — the dashboard (nginx + Node sidecar). Published on :3000.
+# Secrets (OPENROUTER_API_KEY, WM_SESSION_SECRET, WORLDMONITOR_VALID_KEYS,
+# RELAY_SHARED_SECRET, UPSTASH_REDIS_REST_TOKEN) come from .env; the non-secret
+# settings below are copied verbatim from podman/compose.local.yml.
+# The image's own HEALTHCHECK (/api/sidecar-health through nginx) is used.
+[Unit]
+Description=World Monitor — dashboard
+Requires=redis-rest.service ais-relay.service
+After=redis-rest.service ais-relay.service
+
+[Container]
+ContainerName=worldmonitor
+Image=quay.io/ryan_nix/worldmonitor-openshift:latest
+AutoUpdate=registry
+Network=worldmonitor.network
+PublishPort=3000:8080
+EnvironmentFile=%h/.config/worldmonitor/.env
+# --- AI via OpenRouter ---
+Environment=LLM_REASONING_PROVIDER=openrouter
+Environment=LLM_REASONING_MODEL=anthropic/claude-sonnet-4.5
+Environment=LLM_TOOL_PROVIDER=openrouter
+Environment=LLM_TOOL_MODEL=anthropic/claude-haiku-4.5
+Environment=FORECAST_LLM_PROVIDER_ORDER=openrouter
+Environment=FORECAST_LLM_MODEL_OPENROUTER=anthropic/claude-haiku-4.5
+Environment=USAGE_TELEMETRY=1
+# --- AI brief pipelines (Haiku-pinned; see compose.local.yml for the cost notes) ---
+Environment=AI_DIGEST_ENABLED=1
+Environment=DIGEST_CRON_ENABLED=1
+Environment=BRIEF_COMPOSE_ENABLED=1
+Environment=BRIEF_LLM_ENABLED=1
+Environment=BRIEF_LLM_MODEL=anthropic/claude-haiku-4.5
+Environment=DIGEST_LLM_MODEL=anthropic/claude-haiku-4.5
+Environment=AI_IMPACT_ENABLED=1
+Environment=IMPACT_LLM_MODEL=anthropic/claude-haiku-4.5
+# --- Cache proxy ---
+Environment=UPSTASH_REDIS_REST_URL=http://redis-rest:8080
+Environment=UPSTASH_ALLOW_INSECURE_HTTP=true
+Environment=LOCAL_API_MODE=docker
+Environment=LOCAL_API_CLOUD_FALLBACK=false
+# --- Relay connection ---
+Environment=WS_RELAY_URL=http://ais-relay:3004
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

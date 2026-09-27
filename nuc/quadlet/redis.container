@@ -1,0 +1,33 @@
+# =============================================================================
+# World Monitor — Redis cache (Quadlet unit, rootless)
+# =============================================================================
+# Every unit here mirrors podman/compose.local.yml one-for-one. Differences:
+#   * AutoUpdate=registry  — podman-auto-update.timer pulls a new image when the
+#     registry digest changes and restarts this unit. If the restarted unit
+#     fails to come up HEALTHY, podman rolls back to the previous image.
+#   * Notify=healthy       — systemd does not consider the unit "started" until
+#     the container's healthcheck passes; that is what makes rollback work.
+# =============================================================================
+[Unit]
+Description=World Monitor — Redis cache
+
+[Container]
+ContainerName=redis
+Image=docker.io/library/redis:8-alpine
+AutoUpdate=registry
+Network=worldmonitor.network
+Volume=redis-data.volume:/data
+EnvironmentFile=%h/.config/worldmonitor/.env
+Exec=sh -c 'exec redis-server --requirepass "$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru'
+HealthCmd=sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG'
+HealthInterval=30s
+HealthStartPeriod=15s
+HealthRetries=3
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

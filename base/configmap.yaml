@@ -20,6 +20,14 @@ data:
   # Cyber layer off by default (needs threat-intel keys to be useful).
   VITE_ENABLE_CYBER_LAYER: "false"
   VITE_ENABLE_AIS: "true"
+  # Self-hosted digest budget. Upstream hard-codes a 10s feed-fetch budget
+  # derived from Vercel's 25s edge ceiling; one sidecar can't fetch 245 feeds
+  # in 10s, so every rebuild aborts and the footer reads "stale". Our
+  # Containerfile.ubi10 makes the two constants env-tunable; an image without
+  # that patch simply ignores these. Only matters where the digest is enabled
+  # (see the overlay LLM patches).
+  DIGEST_RESPONSE_LIMIT_MS: "75000"
+  DIGEST_ADOPTION_BUDGET_MS: "30000"
   # Digest/brief pipeline off — needs Convex, Resend, and Clerk to function.
   AI_DIGEST_ENABLED: ""
   DIGEST_CRON_ENABLED: ""

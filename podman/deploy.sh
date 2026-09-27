@@ -52,6 +52,21 @@ compose() {
   podman compose -f "$COMPOSE_FILE" "$@"
 }
 
+# ---- which upstream commit is each image built from? ------------------------
+# Every image carries org.opencontainers.image.revision = the koala73/worldmonitor
+# commit it was built from. Printing it is the only reliable way to see whether
+# `latest`, `relay-latest` and `redis-rest-latest` actually moved together —
+# the tag names never change, so a stale one is invisible otherwise.
+REPO_IMG="quay.io/ryan_nix/worldmonitor-openshift"
+show_versions() {
+  local tag rev
+  for tag in latest relay-latest redis-rest-latest; do
+    rev="$(podman image inspect "${REPO_IMG}:${tag}" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+    if [[ -n "$rev" ]]; then printf "  %-18s %s\n" "$tag" "${rev:0:12}"; else printf "  %-18s %s\n" "$tag" "not pulled yet"; fi
+  done
+}
+
 # ---- prompt for a key, keeping any existing value ---------------------------
 # Args: VAR_NAME  "human description"  required|optional
 ask_key() {
@@ -146,28 +161,53 @@ do_reset() {
 do_update() {
   require_podman
   bold "Checking for a newer World Monitor build..."
+  info "Before:"; show_versions
   info "Pulling the latest images from Quay (this is where nightly builds land)."
-  compose pull
+  # NOT `compose pull`: the docker-compose provider honours pull_policy: missing
+  # and reports "Skipped — image is already present locally" for any tag that
+  # exists on this machine, so a moved `latest` was never re-fetched (seen
+  # 2026-09-27: relay-latest and redis-rest-latest stayed weeks stale while
+  # `-update` reported success). `podman pull` always compares digests.
+  local img
+  for img in $(grep -E '^\s*image:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"' | sort -u); do
+    podman pull -q "$img" >/dev/null && ok "pulled $img" || warn "could not pull $img (keeping the local copy)"
+  done
   echo
   bold "Restarting onto the updated images..."
   compose up -d
   echo
+  info "After:"; show_versions
   ok "Updated and running.  $URL"
+  info "Seeder-fed panels refresh on the next hourly pass (or restart 'seeders' to run one now)."
   info "If something looks off after an update, the project is young and still"
   info "settling — you can keep running the version you had; updates are only"
   info "pulled when you run ./deploy.sh -update."
 }
 
+do_version() {
+  require_podman
+  bold "Image versions (upstream commit each was built from)"
+  show_versions
+  local a r
+  a="$(podman image inspect "${REPO_IMG}:latest" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+  r="$(podman image inspect "${REPO_IMG}:relay-latest" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+  if [[ -n "$a" && -n "$r" && "$a" != "$r" ]]; then
+    warn "app and relay images are from different upstream commits — run ./deploy.sh -update"
+  fi
+}
+
 # ---- dispatch ---------------------------------------------------------------
 case "${1:-}" in
-  ""|-start|start)   do_start  ;;
-  -stop|stop)        do_stop   ;;
-  -update|update)    do_update ;;
-  -reset|reset)      do_reset  ;;
+  ""|-start|start)   do_start   ;;
+  -stop|stop)        do_stop    ;;
+  -update|update)    do_update  ;;
+  -version|version)  do_version ;;
+  -reset|reset)      do_reset   ;;
   -h|--help|help)
     bold "World Monitor"
     info "./deploy.sh          start it (prompts for keys the first time)"
     info "./deploy.sh -update  pull the latest build, then restart"
+    info "./deploy.sh -version show which upstream commit each image is built from"
     info "./deploy.sh -stop    stop it"
     info "./deploy.sh -reset   re-enter your keys"
     ;;
