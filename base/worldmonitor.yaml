@@ -52,6 +52,9 @@ spec:
         - name: worldmonitor
           # Overwritten by the image.openshift.io/triggers annotation above.
           image: image-registry.openshift-image-registry.svc:5000/openshift/worldmonitor:latest
+          # Already the default for a `latest` tag; explicit so all four
+          # workloads read the same and a future tag rename can't regress it.
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
@@ -84,6 +87,22 @@ spec:
             # this allowlist. Same secret value on both sides, so the relay's
             # warm-pings authenticate. Without it: 401 "API key required".
             - name: WORLDMONITOR_VALID_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: worldmonitor-relay
+                  key: WORLDMONITOR_RELAY_KEY
+            # Current upstream (server/gateway.ts isRelayWarmPingRequest) checks
+            # the relay's X-WorldMonitor-Key against the app's OWN
+            # WORLDMONITOR_RELAY_KEY — a dedicated relay<->gateway secret that
+            # unlocks only the warm-ping allowlist (chokepoints, service
+            # statuses, feed digest). Since #3541 there is no Origin-trust
+            # fallback, so without this the relay's warm-pings 401.
+            # Same secret key as the relay, so both sides agree by construction.
+            # (The VALID_KEYS mapping above is the older contract and is kept so
+            # nothing that works today breaks; upstream's guidance is that the
+            # relay key should NOT be an enterprise key — a later cleanup is to
+            # give WORLDMONITOR_VALID_KEYS its own value in secrets/relay.env.)
+            - name: WORLDMONITOR_RELAY_KEY
               valueFrom:
                 secretKeyRef:
                   name: worldmonitor-relay

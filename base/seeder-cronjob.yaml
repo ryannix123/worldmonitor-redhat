@@ -51,6 +51,9 @@ spec:
             - name: seeders
               # Same relay image — it carries the scripts and their deps.
               image: image-registry.openshift-image-registry.svc:5000/openshift/worldmonitor-ais-relay:latest
+              # Same reason as the relay Deployment: the overlay tag is
+              # `relay-latest`, which does NOT get the implicit Always policy.
+              imagePullPolicy: Always
               # Preload the SRH compat shim only if the image actually has it.
               # A bare `NODE_OPTIONS=--require <path>` aborts EVERY node
               # invocation when the file is absent — two CronJob runs failed

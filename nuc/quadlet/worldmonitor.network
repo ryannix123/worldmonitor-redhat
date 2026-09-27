@@ -1,0 +1,4 @@
+# Private network for the five containers. Container names resolve via DNS on
+# this network, which is what the http://redis-rest:8080 style URLs rely on.
+[Network]
+NetworkName=worldmonitor

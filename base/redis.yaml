@@ -37,7 +37,10 @@ spec:
     spec:
       containers:
         - name: redis
-          image: docker.io/redis:7-alpine
+          # 8.x line, matching podman/compose.local.yml. CVE-2026-66373 (RESTORE
+          # double-free, authenticated RCE) is fixed in 8.8.0+; the 7.x tag
+          # was behind. The cache is internal-only, but cheap to get right.
+          image: docker.io/redis:8-alpine
           args:
             - redis-server
             - --requirepass

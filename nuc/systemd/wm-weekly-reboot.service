@@ -1,0 +1,6 @@
+[Unit]
+Description=World Monitor appliance — weekly reboot (picks up kernel updates, clears browser memory)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl reboot

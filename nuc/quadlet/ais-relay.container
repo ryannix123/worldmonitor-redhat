@@ -1,0 +1,27 @@
+# World Monitor — AIS / OpenSky / RSS relay. Runs ~35 seeders inline and proxies
+# the live ADS-B/AIS streams. The image's own HEALTHCHECK (TCP connect on 3004)
+# is used, so no HealthCmd is needed here.
+[Unit]
+Description=World Monitor — AIS relay
+Requires=redis-rest.service
+After=redis-rest.service
+
+[Container]
+ContainerName=ais-relay
+Image=quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+AutoUpdate=registry
+Network=worldmonitor.network
+EnvironmentFile=%h/.config/worldmonitor/.env
+Environment=PORT=3004
+Environment=UPSTASH_REDIS_REST_URL=http://redis-rest:8080
+Environment=UPSTASH_ALLOW_INSECURE_HTTP=true
+# Matches compose (image default CMD). To also preload the SRH read shim, use:
+#   Exec=node --require /app/wm-api-base-shim.cjs --require /app/srh-compat-shim.cjs scripts/ais-relay.cjs
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

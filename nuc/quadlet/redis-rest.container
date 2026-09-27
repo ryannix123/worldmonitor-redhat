@@ -1,0 +1,29 @@
+# World Monitor — Upstash-compatible Redis REST proxy the app reads through.
+# SRH_TOKEN / SRH_CONNECTION_STRING are derived into .env by install.sh
+# (Quadlet does not expand ${VAR} inside Environment= lines).
+[Unit]
+Description=World Monitor — Redis REST proxy
+Requires=redis.service
+After=redis.service
+
+[Container]
+ContainerName=redis-rest
+Image=quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest
+AutoUpdate=registry
+Network=worldmonitor.network
+EnvironmentFile=%h/.config/worldmonitor/.env
+Environment=PORT=8080
+# Any HTTP answer (a 401 on the unauthenticated root is expected) proves the
+# listener is up; a connection refusal fails the check.
+HealthCmd=curl -s -o /dev/null http://127.0.0.1:8080/
+HealthInterval=30s
+HealthStartPeriod=20s
+HealthRetries=3
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

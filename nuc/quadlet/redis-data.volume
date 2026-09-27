@@ -1,0 +1,4 @@
+# Persistent cache. Survives image updates and reboots; delete the volume to
+# force a cold re-seed (`podman volume rm redis-data` while the stack is down).
+[Volume]
+VolumeName=redis-data

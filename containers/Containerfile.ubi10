@@ -53,6 +53,25 @@ COPY . .
 # build (the nightly caught exactly this on 2026-09-24 at upstream 158fd6f).
 RUN npm run inventory:facts
 
+# --- Self-hosted digest budget ---------------------------------------------
+# list-feed-digest.ts hard-codes a 10s feed-fetch budget derived from Vercel's
+# 25s edge-response ceiling (25_000 - 15_000 headroom). A single self-hosted
+# sidecar fetching 245 RSS feeds cold cannot finish in 10s, so every rebuild
+# aborts and the footer reports "stale — older accepted content". The sidecar
+# has no such ceiling, so make the two constants env-tunable. Unset, behaviour
+# is identical to upstream. Guarded: fails the build if upstream moves them.
+# Runtime knobs (set on the app container):
+#   DIGEST_RESPONSE_LIMIT_MS=75000   -> ~60s of feed fetching
+#   DIGEST_ADOPTION_BUDGET_MS=30000  -> ~27s of story adoption
+RUN set -e; F=server/worldmonitor/news/v1/list-feed-digest.ts; \
+    grep -q '^const VERCEL_INITIAL_RESPONSE_LIMIT_MS = 25_000;' "$F" \
+      || { echo "digest budget constant VERCEL_INITIAL_RESPONSE_LIMIT_MS moved upstream - update this patch"; exit 1; }; \
+    grep -q '^const DIGEST_RESPONSE_TIMEOUT_MS = 14_000;' "$F" \
+      || { echo "digest budget constant DIGEST_RESPONSE_TIMEOUT_MS moved upstream - update this patch"; exit 1; }; \
+    sed -i 's/^const VERCEL_INITIAL_RESPONSE_LIMIT_MS = 25_000;/const VERCEL_INITIAL_RESPONSE_LIMIT_MS = Number(process.env.DIGEST_RESPONSE_LIMIT_MS) || 25_000;/' "$F"; \
+    sed -i 's/^const DIGEST_RESPONSE_TIMEOUT_MS = 14_000;/const DIGEST_RESPONSE_TIMEOUT_MS = Number(process.env.DIGEST_ADOPTION_BUDGET_MS) || 14_000;/' "$F"; \
+    grep -c 'process.env.DIGEST_' "$F" | grep -qx 2
+
 RUN node docker/build-handlers.mjs
 
 # Upstream removed `build:content-corpus` (present when this was written, gone

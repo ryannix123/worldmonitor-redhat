@@ -33,6 +33,11 @@ spec:
         - name: relay
           # Overwritten by the image.openshift.io/triggers annotation above.
           image: image-registry.openshift-image-registry.svc:5000/openshift/worldmonitor-ais-relay:latest
+          # Explicit: the Quay overlay maps this to the `relay-latest` tag, and
+          # Kubernetes only defaults to Always for a tag literally named
+          # `latest`. Left implicit, a node keeps serving whatever relay-latest
+          # it cached, and a rollout restart changes nothing (seen 2026-09-27).
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 3004
