@@ -47,6 +47,14 @@ COPY package.json package-lock.json ./
 # Dockerfile does the same. Copying vendor/ here keeps the dependency layer
 # cacheable (it only changes when upstream bumps a vendored package).
 COPY vendor/ ./vendor/
+# The lockfile pins the vendored packages as real entries
+# (braces@3.0.4-worldmonitor.1), which npm only honours when file: deps are
+# installed as copies, not symlinks. Upstream sets install-links=true in
+# .npmrc AND exports npm_config_install_links=true in its Dockerfile; mirror
+# both, so the build does not depend on which one upstream keeps. Without it:
+#   npm ci: Missing: braces@3.0.4-worldmonitor.1 from lock file  (EUSAGE)
+COPY .npmrc ./
+ENV npm_config_install_links=true
 RUN npm ci --ignore-scripts
 
 COPY . .
