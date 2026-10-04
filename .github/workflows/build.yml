@@ -121,6 +121,11 @@ jobs:
           done
           [ -d "$RUNNER_TEMP/upstream/shared" ] \
             || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
+          # package.json references `file:vendor/*` packages (upstream #8821);
+          # the Containerfiles COPY vendor/ before `npm ci`. Fail here, by name,
+          # if upstream drops or moves it.
+          [ -d "$RUNNER_TEMP/upstream/vendor" ] \
+            || { echo "::error::upstream vendor/ directory not found at this SHA (package.json file: deps will fail npm ci)"; exit 1; }
 
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10" \
@@ -272,6 +277,11 @@ jobs:
           # fails here with a clear message, not as MODULE_NOT_FOUND in smoke.
           [ -d "$RUNNER_TEMP/upstream/shared" ] \
             || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
+          # package.json references `file:vendor/*` packages (upstream #8821);
+          # the Containerfiles COPY vendor/ before `npm ci`. Fail here, by name,
+          # if upstream drops or moves it.
+          [ -d "$RUNNER_TEMP/upstream/vendor" ] \
+            || { echo "::error::upstream vendor/ directory not found at this SHA (package.json file: deps will fail npm ci)"; exit 1; }
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10-relay" \
              "$RUNNER_TEMP/upstream/containers/"

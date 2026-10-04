@@ -25,6 +25,9 @@ WORKDIR /build
 # closure is not separately declared upstream. If image size matters later,
 # prune to the relay's actual imports.
 COPY package.json package-lock.json ./
+# See Containerfile.ubi10: package.json references `file:vendor/*` packages
+# (braces since upstream #8821), which npm ci must be able to see.
+COPY vendor/ ./vendor/
 
 # Install the relay's runtime dependencies. tar 7.5.15 comes in transitively
 # and carries CVE-2026-59873 (a decompression/parse DoS in node-tar). We do NOT
