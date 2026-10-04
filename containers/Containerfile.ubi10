@@ -40,6 +40,13 @@ WORKDIR /build
 ENV NODE_OPTIONS=--max-old-space-size=6144
 
 COPY package.json package-lock.json ./
+# Upstream vendors patched packages under vendor/ and references them from
+# package.json as `file:vendor/<name>` (first: braces, in 0b56a7c6 / #8821,
+# with install-links=true in .npmrc). npm ci resolves those paths at install
+# time, so the directory must exist BEFORE this layer — upstream's own
+# Dockerfile does the same. Copying vendor/ here keeps the dependency layer
+# cacheable (it only changes when upstream bumps a vendored package).
+COPY vendor/ ./vendor/
 RUN npm ci --ignore-scripts
 
 COPY . .
