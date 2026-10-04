@@ -49,11 +49,12 @@ COPY package.json package-lock.json ./
 COPY vendor/ ./vendor/
 # The lockfile pins the vendored packages as real entries
 # (braces@3.0.4-worldmonitor.1), which npm only honours when file: deps are
-# installed as copies, not symlinks. Upstream sets install-links=true in
-# .npmrc AND exports npm_config_install_links=true in its Dockerfile; mirror
-# both, so the build does not depend on which one upstream keeps. Without it:
+# installed as copies, not symlinks (install-links=true). Without it:
 #   npm ci: Missing: braces@3.0.4-worldmonitor.1 from lock file  (EUSAGE)
-COPY .npmrc ./
+# Set via env, NOT by copying .npmrc: upstream's .dockerignore excludes .npmrc
+# ("local self-hosting credentials must not enter build contexts"), so a COPY
+# of it fails `podman build` outright (exit 125, 2026-10-04). This is also
+# why upstream's own Dockerfile uses the env var.
 ENV npm_config_install_links=true
 RUN npm ci --ignore-scripts
 

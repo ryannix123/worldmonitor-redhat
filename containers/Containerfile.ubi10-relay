@@ -29,8 +29,7 @@ COPY package.json package-lock.json ./
 # (braces since upstream #8821), which npm ci must be able to see.
 COPY vendor/ ./vendor/
 # See Containerfile.ubi10: install-links=true is required for the vendored
-# lockfile entries to resolve; .npmrc + env, as upstream does.
-COPY .npmrc ./
+# lockfile entries to resolve. Env only — .npmrc is in upstream's .dockerignore.
 ENV npm_config_install_links=true
 
 # Install the relay's runtime dependencies. tar 7.5.15 comes in transitively

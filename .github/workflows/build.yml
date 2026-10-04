@@ -131,6 +131,33 @@ jobs:
           cp "$REPO/containers/Containerfile.ubi10" \
              "$REPO/containers/entrypoint.sh" \
              "$RUNNER_TEMP/upstream/containers/"
+          # A COPY source that exists in the tree but is excluded by upstream's
+          # .dockerignore fails `podman build` (exit 125) before any RUN step —
+          # .npmrc did exactly this on 2026-10-04. Check every explicit COPY
+          # source in our Containerfiles against the ignore list up front.
+          python3 - "$RUNNER_TEMP/upstream" "$REPO/containers/Containerfile.ubi10" <<'PY'
+          import sys, os, re, fnmatch
+          root, files = sys.argv[1], sys.argv[2:]
+          rules = [l.strip() for l in open(os.path.join(root, '.dockerignore')) if l.strip() and not l.startswith('#')]
+          def ignored(path):
+              hit = False
+              for r in rules:
+                  neg, pat = r.startswith('!'), r.lstrip('!').rstrip('/')
+                  if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(os.path.basename(path), pat) or path == pat or path.startswith(pat + '/'):
+                      hit = not neg
+              return hit
+          bad = []
+          for f in files:
+              for line in open(f):
+                  m = re.match(r'\s*COPY\s+(?!--from)(\S+)\s+\S+', line)
+                  if not m: continue
+                  src = m.group(1).rstrip('/')
+                  if src in ('.', './'): continue
+                  if not os.path.exists(os.path.join(root, src)): bad.append(f'{os.path.basename(f)}: {src} (missing)')
+                  elif ignored(src): bad.append(f'{os.path.basename(f)}: {src} (excluded by .dockerignore)')
+          for b in bad: print(f'::error::COPY source problem - {b}')
+          sys.exit(1 if bad else 0)
+          PY
           # Also carry the SBOM summary helper so later steps at repo root can
           # find it — those run from $REPO, so nothing to copy, but assert it.
           [ -f "$REPO/ci/scan-summary.py" ] || echo "::warning::ci/scan-summary.py absent; scan summary will skip"
@@ -285,6 +312,33 @@ jobs:
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10-relay" \
              "$RUNNER_TEMP/upstream/containers/"
+          # A COPY source that exists in the tree but is excluded by upstream's
+          # .dockerignore fails `podman build` (exit 125) before any RUN step —
+          # .npmrc did exactly this on 2026-10-04. Check every explicit COPY
+          # source in our Containerfiles against the ignore list up front.
+          python3 - "$RUNNER_TEMP/upstream" "$REPO/containers/Containerfile.ubi10-relay" <<'PY'
+          import sys, os, re, fnmatch
+          root, files = sys.argv[1], sys.argv[2:]
+          rules = [l.strip() for l in open(os.path.join(root, '.dockerignore')) if l.strip() and not l.startswith('#')]
+          def ignored(path):
+              hit = False
+              for r in rules:
+                  neg, pat = r.startswith('!'), r.lstrip('!').rstrip('/')
+                  if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(os.path.basename(path), pat) or path == pat or path.startswith(pat + '/'):
+                      hit = not neg
+              return hit
+          bad = []
+          for f in files:
+              for line in open(f):
+                  m = re.match(r'\s*COPY\s+(?!--from)(\S+)\s+\S+', line)
+                  if not m: continue
+                  src = m.group(1).rstrip('/')
+                  if src in ('.', './'): continue
+                  if not os.path.exists(os.path.join(root, src)): bad.append(f'{os.path.basename(f)}: {src} (missing)')
+                  elif ignored(src): bad.append(f'{os.path.basename(f)}: {src} (excluded by .dockerignore)')
+          for b in bad: print(f'::error::COPY source problem - {b}')
+          sys.exit(1 if bad else 0)
+          PY
 
       - name: Build
         run: |
