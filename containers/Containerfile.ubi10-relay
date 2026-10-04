@@ -28,6 +28,10 @@ COPY package.json package-lock.json ./
 # See Containerfile.ubi10: package.json references `file:vendor/*` packages
 # (braces since upstream #8821), which npm ci must be able to see.
 COPY vendor/ ./vendor/
+# See Containerfile.ubi10: install-links=true is required for the vendored
+# lockfile entries to resolve; .npmrc + env, as upstream does.
+COPY .npmrc ./
+ENV npm_config_install_links=true
 
 # Install the relay's runtime dependencies. tar 7.5.15 comes in transitively
 # and carries CVE-2026-59873 (a decompression/parse DoS in node-tar). We do NOT
