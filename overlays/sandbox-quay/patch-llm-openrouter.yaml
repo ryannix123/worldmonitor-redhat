@@ -30,9 +30,11 @@ data:
 
   # --- Tool profile (cheap extraction / parsing) ----------------------------
   # Defaults to groq. Reasoning is forced off here, so a small fast model is
-  # the right call — this profile runs on high-volume parsing, not synthesis.
+  # the right call — this profile runs on high-volume parsing, not synthesis,
+  # and it also drives the digest and impact stages. DeepSeek V4 Flash is
+  # upstream's own default for it and ~10x cheaper per token than Haiku.
   LLM_TOOL_PROVIDER: "openrouter"
-  LLM_TOOL_MODEL: "anthropic/claude-haiku-4.5"
+  LLM_TOOL_MODEL: "deepseek/deepseek-v4-flash"
 
   # --- Forecast stage routing -----------------------------------------------
   # Separate knob set consumed by the forecast seeder. Precedence per
@@ -40,7 +42,7 @@ data:
   # Start with the global override only; add stage overrides once you have
   # cost data.
   FORECAST_LLM_PROVIDER_ORDER: "openrouter"
-  FORECAST_LLM_MODEL_OPENROUTER: "anthropic/claude-haiku-4.5"
+  FORECAST_LLM_MODEL_OPENROUTER: "deepseek/deepseek-v4-flash"
 
   # --- Cost containment -----------------------------------------------------
   # This app has hard spend ceilings for AviationStack (MONTHLY_BUDGET /
