@@ -19,19 +19,16 @@ EnvironmentFile=%h/.config/worldmonitor/.env
 Environment=LLM_REASONING_PROVIDER=openrouter
 Environment=LLM_REASONING_MODEL=anthropic/claude-sonnet-4.5
 Environment=LLM_TOOL_PROVIDER=openrouter
-Environment=LLM_TOOL_MODEL=anthropic/claude-haiku-4.5
+Environment=LLM_TOOL_MODEL=deepseek/deepseek-v4-flash
 Environment=FORECAST_LLM_PROVIDER_ORDER=openrouter
-Environment=FORECAST_LLM_MODEL_OPENROUTER=anthropic/claude-haiku-4.5
+Environment=FORECAST_LLM_MODEL_OPENROUTER=deepseek/deepseek-v4-flash
 Environment=USAGE_TELEMETRY=1
-# --- AI brief pipelines (Haiku-pinned; see compose.local.yml for the cost notes) ---
+# --- AI brief pipelines (see compose.local.yml for the cost notes) ---
 Environment=AI_DIGEST_ENABLED=1
 Environment=DIGEST_CRON_ENABLED=1
 Environment=BRIEF_COMPOSE_ENABLED=1
 Environment=BRIEF_LLM_ENABLED=1
-Environment=BRIEF_LLM_MODEL=anthropic/claude-haiku-4.5
-Environment=DIGEST_LLM_MODEL=anthropic/claude-haiku-4.5
 Environment=AI_IMPACT_ENABLED=1
-Environment=IMPACT_LLM_MODEL=anthropic/claude-haiku-4.5
 # --- Cache proxy ---
 Environment=UPSTASH_REDIS_REST_URL=http://redis-rest:8080
 Environment=UPSTASH_ALLOW_INSECURE_HTTP=true

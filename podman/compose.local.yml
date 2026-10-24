@@ -34,34 +34,33 @@ services:
       # Reasoning profile — synthesis, briefs, analyst
       LLM_REASONING_PROVIDER: "openrouter"
       LLM_REASONING_MODEL: "anthropic/claude-sonnet-4.5"
-      # Tool profile — cheap extraction / parsing
+      # Tool profile — cheap extraction / parsing. This profile also drives the
+      # digest and impact stages (there is no DIGEST_LLM_MODEL / IMPACT_LLM_MODEL
+      # upstream), so it is the high-volume knob. DeepSeek V4 Flash is upstream's
+      # own default for it and roughly a tenth of Haiku's per-token price; in a
+      # month of real usage Haiku was ~70% of the OpenRouter bill.
       LLM_TOOL_PROVIDER: "openrouter"
-      LLM_TOOL_MODEL: "anthropic/claude-haiku-4.5"
+      LLM_TOOL_MODEL: "deepseek/deepseek-v4-flash"
       # Forecast stage routing
       FORECAST_LLM_PROVIDER_ORDER: "openrouter"
-      FORECAST_LLM_MODEL_OPENROUTER: "anthropic/claude-haiku-4.5"
+      FORECAST_LLM_MODEL_OPENROUTER: "deepseek/deepseek-v4-flash"
       # Per-call telemetry so you can see if Claude calls succeed or fall back
       USAGE_TELEMETRY: "1"
       # --- AI brief pipelines ----------------------------------------------
       # OFF by default in the OpenShift patch because these fan LLM calls out
       # across 500+ feeds and 31 countries on a cron, and the app has NO spend
-      # ceiling for LLM calls. Enabled here as coherent pairs (digest+cron,
-      # brief-compose+brief-llm) and routed to Haiku so the high-volume calls
-      # stay cheap; Sonnet is reserved for the reasoning profile above.
-      # AI_IMPACT_ENABLED (the heaviest fan-out) is left OFF until you've seen
-      # a day of real cost in the USAGE_TELEMETRY output.
+      # ceiling for LLM calls — put a credit limit on the OpenRouter key.
+      # Enabled here as coherent pairs (digest+cron, brief-compose+brief-llm).
+      # The brief stage picks its own OpenRouter model (BRIEF_LLM_OPENROUTER_MODEL,
+      # default gemini-3.5-flash-lite); Sonnet stays on the reasoning profile.
       AI_DIGEST_ENABLED: "1"
       DIGEST_CRON_ENABLED: "1"
       BRIEF_COMPOSE_ENABLED: "1"
       BRIEF_LLM_ENABLED: "1"
-      # Pin the brief/digest stages to Haiku regardless of the reasoning model.
-      BRIEF_LLM_MODEL: "anthropic/claude-haiku-4.5"
-      DIGEST_LLM_MODEL: "anthropic/claude-haiku-4.5"
-      # Heaviest fan-out — impact/escalation synthesis. Enabled with $8+ of
-      # OpenRouter headroom and USAGE_TELEMETRY on so spend is visible; flip to
-      # "0" and restart if the meter moves faster than it's worth.
+      # Heaviest fan-out — impact/escalation synthesis. Watch the OpenRouter
+      # Activity chart for a few days after enabling; flip to "0" and restart
+      # if the meter moves faster than it's worth.
       AI_IMPACT_ENABLED: "1"
-      IMPACT_LLM_MODEL: "anthropic/claude-haiku-4.5"
       # --- Cache proxy ------------------------------------------------------
       UPSTASH_REDIS_REST_URL: "http://redis-rest:8080"
       UPSTASH_REDIS_REST_TOKEN: "${REDIS_TOKEN}"
@@ -209,9 +208,9 @@ services:
       LLM_REASONING_PROVIDER: "openrouter"
       LLM_REASONING_MODEL: "anthropic/claude-sonnet-4.5"
       LLM_TOOL_PROVIDER: "openrouter"
-      LLM_TOOL_MODEL: "anthropic/claude-haiku-4.5"
+      LLM_TOOL_MODEL: "deepseek/deepseek-v4-flash"
       FORECAST_LLM_PROVIDER_ORDER: "openrouter"
-      FORECAST_LLM_MODEL_OPENROUTER: "anthropic/claude-haiku-4.5"
+      FORECAST_LLM_MODEL_OPENROUTER: "deepseek/deepseek-v4-flash"
       USAGE_TELEMETRY: "1"
       # --- Provider API keys. Seeders without their key self-skip (SKIP). ----
       UCDP_ACCESS_TOKEN: "${UCDP_ACCESS_TOKEN:-}"

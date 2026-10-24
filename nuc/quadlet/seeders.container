@@ -26,9 +26,9 @@ Environment=SEED_TIMEOUT=90
 Environment=LLM_REASONING_PROVIDER=openrouter
 Environment=LLM_REASONING_MODEL=anthropic/claude-sonnet-4.5
 Environment=LLM_TOOL_PROVIDER=openrouter
-Environment=LLM_TOOL_MODEL=anthropic/claude-haiku-4.5
+Environment=LLM_TOOL_MODEL=deepseek/deepseek-v4-flash
 Environment=FORECAST_LLM_PROVIDER_ORDER=openrouter
-Environment=FORECAST_LLM_MODEL_OPENROUTER=anthropic/claude-haiku-4.5
+Environment=FORECAST_LLM_MODEL_OPENROUTER=deepseek/deepseek-v4-flash
 Environment=USAGE_TELEMETRY=1
 
 [Service]
