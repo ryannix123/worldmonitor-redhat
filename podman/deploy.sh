@@ -5,6 +5,7 @@
 #   ./deploy.sh          first run prompts for keys, writes .env, starts the app
 #                        later runs just start it
 #   ./deploy.sh -stop    stop the app (your data is kept)
+#   ./deploy.sh -keys     add optional data-source keys you skipped the first time
 #   ./deploy.sh -reset    re-enter all the keys from scratch
 #
 # Open http://localhost:3000 once it's up.
@@ -109,6 +110,7 @@ setup_env() {
     echo "WM_SESSION_SECRET=$(openssl rand -hex 32)"
     echo "WORLDMONITOR_VALID_KEYS=wm_$(openssl rand -hex 24)"
     echo "RELAY_SHARED_SECRET=$(openssl rand -hex 32)"
+    echo "WORLDMONITOR_SEED_REFRESH_KEY=$(openssl rand -hex 32)"
   } >> "$ENV_FILE"
   ok "Generated the internal cache + session secrets (you don't need to know them)."
   echo
@@ -123,14 +125,53 @@ setup_env() {
   ask_key FINNHUB_API_KEY    "Finnhub key (market data)"           optional
   ask_key FRED_API_KEY       "FRED key (economic data)"            optional
   ask_key GROQ_API_KEY       "Groq key (fast inference)"           optional
+  ask_key WINDY_API_KEY      "Windy key (live webcams, free tier)" optional
+  ask_key DTM_API_KEY        "IOM DTM key (displacement data)"     optional
   echo
   ok "Saved to .env"
+}
+
+# ---- top up an existing .env with anything a newer revision needs -----------
+# setup_env returns early once OPENROUTER_API_KEY is saved, so secrets and
+# prompts added after first install would never land. This runs on every
+# start/update: generated secrets are filled in silently; new optional keys
+# are only prompted for by ./deploy.sh -keys.
+ensure_generated() {   # ensure_generated VAR VALUE
+  grep -qE "^$1=..*" "$ENV_FILE" 2>/dev/null && return 0
+  grep -vE "^$1=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || true
+  mv "$ENV_FILE.tmp" "$ENV_FILE"
+  printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+  info "Generated $1 (new in this revision)"
+}
+topup_env() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  ensure_generated WORLDMONITOR_SEED_REFRESH_KEY "$(openssl rand -hex 32)"
+}
+
+do_keys() {
+  require_podman
+  [[ -f "$ENV_FILE" ]] || { warn "No .env yet — run ./deploy.sh first."; exit 1; }
+  bold "Optional data-source keys (press Enter to leave any blank)"
+  info "Keys already saved are skipped. Delete the line from .env to re-enter one."
+  echo
+  ask_key UCDP_ACCESS_TOKEN  "UCDP token (armed-conflict data)"    optional
+  ask_key AISSTREAM_API_KEY  "AISStream key (live ships)"          optional
+  ask_key ACLED_EMAIL        "ACLED email (OAuth login — the old-style API key no longer works)" optional
+  ask_key ACLED_PASSWORD     "ACLED password"                      optional
+  ask_key FINNHUB_API_KEY    "Finnhub key (market data)"           optional
+  ask_key FRED_API_KEY       "FRED key (economic data)"            optional
+  ask_key GROQ_API_KEY       "Groq key (fast inference)"           optional
+  ask_key WINDY_API_KEY      "Windy key (live webcams, free tier)" optional
+  ask_key DTM_API_KEY        "IOM DTM key (displacement data)"     optional
+  echo
+  ok "Saved. Apply with:  ./deploy.sh -update   (containers are recreated with the new env)"
 }
 
 # ---- commands ---------------------------------------------------------------
 do_start() {
   require_podman
   setup_env
+  topup_env
   echo
   bold "Starting World Monitor..."
   info "First run downloads the containers — a few minutes. Then it's cached."
@@ -160,6 +201,7 @@ do_reset() {
 
 do_update() {
   require_podman
+  topup_env
   bold "Checking for a newer World Monitor build..."
   info "Before:"; show_versions
   info "Pulling the latest images from Quay (this is where nightly builds land)."
@@ -203,12 +245,14 @@ case "${1:-}" in
   -update|update)    do_update  ;;
   -version|version)  do_version ;;
   -reset|reset)      do_reset   ;;
+  -keys|keys)        do_keys    ;;
   -h|--help|help)
     bold "World Monitor"
     info "./deploy.sh          start it (prompts for keys the first time)"
     info "./deploy.sh -update  pull the latest build, then restart"
     info "./deploy.sh -version show which upstream commit each image is built from"
     info "./deploy.sh -stop    stop it"
+    info "./deploy.sh -keys    add optional data-source keys you skipped (ACLED, Windy, DTM…)"
     info "./deploy.sh -reset   re-enter your keys"
     ;;
   *)

@@ -110,6 +110,7 @@ catch up.
 ```bash
 ./deploy.sh          # start (prompts for keys the first time)
 ./deploy.sh -stop    # stop, keeping your cached data
+./deploy.sh -keys    # add optional data-source keys you skipped (ACLED, Windy, DTM…)
 ./deploy.sh -reset   # re-enter your keys from scratch
 ```
 
@@ -177,7 +178,9 @@ without its key.
 | `GROQ_API_KEY` | Fast LLM inference for select brief/synthesis seeders | <https://console.groq.com> |
 | `UCDP_ACCESS_TOKEN` | Armed-conflict events | free token — see main README |
 | `AISSTREAM_API_KEY` | Live vessel positions | <https://aisstream.io> |
-| `ACLED_EMAIL` / `ACLED_PASSWORD` | Second conflict source | <https://acleddata.com> |
+| `ACLED_EMAIL` / `ACLED_PASSWORD` | Second conflict source (OAuth login; a legacy ACLED "API key" is not accepted) | <https://acleddata.com> |
+| `WINDY_API_KEY` | Live Webcams tile (free tier, low-res previews, attribution shown) | <https://api.windy.com> |
+| `DTM_API_KEY` | Refugees & displacement (IOM DTM) | <https://dtm.iom.int> |
 
 Optional extras the seed pass will use if present (skipped cleanly if not):
 `NASA_FIRMS_API_KEY` (fire detections), `CLOUDFLARE_API_TOKEN` (internet

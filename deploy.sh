@@ -305,6 +305,11 @@ ensure_secret WORLDMONITOR_RELAY_KEY "wm_$(openssl rand -hex 24)" "warm-ping key
 # browser session, so key-gated panels (Country Instability, cable health)
 # return 401 "API key required" to the browser and render as UNAVAILABLE.
 ensure_secret WM_SESSION_SECRET "$(openssl rand -hex 32)" "browser session signing"
+# Seed-only refresh key: seed-resilience-scores presents it to the app's
+# get-resilience-ranking?refresh=1 and the gateway compares it to its own copy.
+# Without it the resilience seed FAILs and country-history, five-factor-scorecard
+# and supply-vulnerability fail downstream, leaving Country Instability CACHED.
+ensure_secret WORLDMONITOR_SEED_REFRESH_KEY "$(openssl rand -hex 32)" "resilience seed refresh"
 
 # Provider keys are optional — every feature degrades gracefully without them.
 #
@@ -341,6 +346,8 @@ NASA_FIRMS_API_KEY=
 AISSTREAM_API_KEY=
 ACLED_EMAIL=
 ACLED_PASSWORD=
+WINDY_API_KEY=
+DTM_API_KEY=
 EOF
   fi
 fi
