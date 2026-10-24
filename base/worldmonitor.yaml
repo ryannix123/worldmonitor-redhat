@@ -107,6 +107,16 @@ spec:
                 secretKeyRef:
                   name: worldmonitor-relay
                   key: WORLDMONITOR_RELAY_KEY
+            # Seed-only refresh key for get-resilience-ranking?refresh=1. The
+            # seeder CronJob presents the same value as X-WorldMonitor-Key.
+            # optional: a relay.env generated before this key existed must not
+            # put the app into CreateContainerConfigError; deploy.sh appends it.
+            - name: WORLDMONITOR_SEED_REFRESH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: worldmonitor-relay
+                  key: WORLDMONITOR_SEED_REFRESH_KEY
+                  optional: true
             # Signs the wm-session cookie. The browser has no API key, so
             # key-gated endpoints (get-risk-scores / CII, cable-health) reject
             # it with 401 "API key required" unless the app can mint a session.

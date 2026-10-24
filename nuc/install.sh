@@ -116,6 +116,7 @@ getvar() { grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-; }
 [ -n "$(getvar WM_SESSION_SECRET)" ]       || setvar WM_SESSION_SECRET "$(openssl rand -hex 32)"
 [ -n "$(getvar WORLDMONITOR_VALID_KEYS)" ] || setvar WORLDMONITOR_VALID_KEYS "wm_$(openssl rand -hex 24)"
 [ -n "$(getvar RELAY_SHARED_SECRET)" ]     || setvar RELAY_SHARED_SECRET "$(openssl rand -hex 32)"
+[ -n "$(getvar WORLDMONITOR_SEED_REFRESH_KEY)" ] || setvar WORLDMONITOR_SEED_REFRESH_KEY "$(openssl rand -hex 32)"
 # Derived values (Quadlet cannot expand ${VAR} in Environment= lines).
 setvar SRH_TOKEN                "$(getvar REDIS_TOKEN)"
 setvar SRH_CONNECTION_STRING    "redis://:$(getvar REDIS_PASSWORD)@redis:6379"

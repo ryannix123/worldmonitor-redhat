@@ -134,6 +134,14 @@ spec:
                     secretKeyRef:
                       name: worldmonitor-relay
                       key: WORLDMONITOR_RELAY_KEY
+                # Same value as the app's WORLDMONITOR_SEED_REFRESH_KEY; without
+                # it seed-resilience-scores and its three dependants FAIL.
+                - name: WORLDMONITOR_SEED_REFRESH_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: worldmonitor-relay
+                      key: WORLDMONITOR_SEED_REFRESH_KEY
+                      optional: true
                 # Per-seeder cap (seconds) for STANDALONE seeders; bundles are
                 # self-bound and exempt. Lowered from 600 to 180: the pass runs
                 # seeders sequentially, so one slow standalone seeder on a dead/
