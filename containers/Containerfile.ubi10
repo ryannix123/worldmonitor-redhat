@@ -88,6 +88,15 @@ RUN set -e; F=server/worldmonitor/news/v1/list-feed-digest.ts; \
     sed -i 's/^const DIGEST_RESPONSE_TIMEOUT_MS = 14_000;/const DIGEST_RESPONSE_TIMEOUT_MS = Number(process.env.DIGEST_ADOPTION_BUDGET_MS) || 14_000;/' "$F"; \
     grep -c 'process.env.DIGEST_' "$F" | grep -qx 2
 
+# --- 3D globe: rewind CDN boundary overrides ---------------------------------
+# country-geometry.ts swaps in higher-res boundaries fetched at runtime from
+# maps.worldmonitor.app. That file's Pakistan ring is wound clockwise; the 3D
+# globe (three-conic-polygon-geometry) draws a clockwise outer ring as its
+# complement, so with Country Instability on the whole globe is one colour
+# wash. The patch normalises winding (RFC 7946) before an override is adopted.
+# Guarded: the script exits 1 if its anchor moves or upstream adds a rewind.
+RUN node containers/patch-country-overrides.mjs
+
 RUN node docker/build-handlers.mjs
 
 # Upstream removed `build:content-corpus` (present when this was written, gone
