@@ -99,7 +99,8 @@ jobs:
           # Fail loudly and early if the build inputs are not where they must
           # be — a missing Containerfile should say so, not surface later as a
           # confusing `cp: cannot stat`.
-          for f in containers/Containerfile.ubi10 containers/entrypoint.sh; do
+          for f in containers/Containerfile.ubi10 containers/entrypoint.sh \
+                   containers/patch-country-overrides.mjs; do
             [ -f "$REPO/$f" ] || { echo "::error::missing $f in repo checkout"; ls -la "$REPO"; exit 1; }
           done
 
@@ -130,6 +131,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10" \
              "$REPO/containers/entrypoint.sh" \
+             "$REPO/containers/patch-country-overrides.mjs" \
              "$RUNNER_TEMP/upstream/containers/"
           # A COPY source that exists in the tree but is excluded by upstream's
           # .dockerignore fails `podman build` (exit 125) before any RUN step —
