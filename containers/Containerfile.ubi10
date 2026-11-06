@@ -101,6 +101,11 @@ RUN set -e; F=server/worldmonitor/news/v1/list-feed-digest.ts; \
 # wash. The patch normalises winding (RFC 7946) before an override is adopted.
 # Guarded: the script exits 1 if its anchor moves or upstream adds a rewind.
 RUN node containers/patch-country-overrides.mjs
+# The choropleth itself: the globe draws a ring's complement when it is wound
+# the RFC 7946 way; upstream reverses rings for the conflict layer but not for
+# Country Instability, so every scored country rendered inside-out. Same
+# guarded shape. Order matters: overrides are normalised above, then reversed.
+RUN node containers/patch-globe-cii-winding.mjs
 
 RUN node docker/build-handlers.mjs
 
