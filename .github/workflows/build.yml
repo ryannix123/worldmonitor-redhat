@@ -122,11 +122,32 @@ jobs:
           done
           [ -d "$RUNNER_TEMP/upstream/shared" ] \
             || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
-          # package.json references `file:vendor/*` packages (upstream #8821);
-          # the Containerfiles COPY vendor/ before `npm ci`. Fail here, by name,
-          # if upstream drops or moves it.
-          [ -d "$RUNNER_TEMP/upstream/vendor" ] \
-            || { echo "::error::upstream vendor/ directory not found at this SHA (package.json file: deps will fail npm ci)"; exit 1; }
+          # package.json references vendored packages as `file:<path>` (upstream
+          # #8821 added vendor/, 2026-11-05 added scripts/vendor/). The app
+          # Containerfile COPYs those roots before `npm ci` so the dependency layer
+          # stays cacheable: every file: dep must exist AND sit under a copied
+          # root. A new root fails here by name, not as npm ENOENT mid-build.
+          python3 - "$RUNNER_TEMP/upstream" <<'PY'
+          import json, os, sys
+          root = sys.argv[1]
+          copied_roots = ('vendor', 'scripts/vendor')   # keep in sync with Containerfile.ubi10 COPY lines
+          deps = {}
+          pkg = json.load(open(os.path.join(root, 'package.json')))
+          for section in ('dependencies', 'devDependencies', 'optionalDependencies'):
+              deps.update(pkg.get(section) or {})
+          bad = []
+          for name, spec in sorted(deps.items()):
+              if not isinstance(spec, str) or not spec.startswith('file:'):
+                  continue
+              rel = spec[len('file:'):].strip('/')
+              if not os.path.isdir(os.path.join(root, rel)):
+                  bad.append(f'{name} -> {spec}: directory missing at this SHA')
+              elif copied_roots and not any(rel == r or rel.startswith(r + '/') for r in copied_roots):
+                  bad.append(f'{name} -> {spec}: not under a root the Containerfile COPYs before npm ci ({", ".join(copied_roots)}) - add a COPY line')
+          for b in bad:
+              print(f'::error::file: dependency problem - {b}')
+          sys.exit(1 if bad else 0)
+          PY
 
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10" \
@@ -202,7 +223,7 @@ jobs:
           # image must never bake in a root default.
           UID_IN_IMAGE="$(podman inspect localhost/${IMAGE_NAME}:amd64 --format '{{.Config.User}}')"
           [ "$UID_IN_IMAGE" = "1001" ] || { echo "::error::expected USER 1001, got '${UID_IN_IMAGE}'"; exit 1; }
-          podman rm -f smoke
+          podman rm -f smoke || echo "::warning::smoke container cleanup failed (runner podman netns); assertions already passed"
 
       # Export once to an OCI archive rather than pointing Syft and Grype at
       # podman's local store. `podman:` transport requires the tools to talk to
@@ -306,11 +327,31 @@ jobs:
           # fails here with a clear message, not as MODULE_NOT_FOUND in smoke.
           [ -d "$RUNNER_TEMP/upstream/shared" ] \
             || { echo "::error::upstream shared/ directory not found at this SHA"; exit 1; }
-          # package.json references `file:vendor/*` packages (upstream #8821);
-          # the Containerfiles COPY vendor/ before `npm ci`. Fail here, by name,
-          # if upstream drops or moves it.
-          [ -d "$RUNNER_TEMP/upstream/vendor" ] \
-            || { echo "::error::upstream vendor/ directory not found at this SHA (package.json file: deps will fail npm ci)"; exit 1; }
+          # package.json references vendored packages as `file:<path>` (upstream
+          # #8821 added vendor/, 2026-11-05 added scripts/vendor/). The relay
+          # Containerfile copies the whole tree before `npm ci`, so only existence
+          # matters here; a missing directory fails by name, not as npm ENOENT.
+          python3 - "$RUNNER_TEMP/upstream" <<'PY'
+          import json, os, sys
+          root = sys.argv[1]
+          copied_roots = None   # Containerfile.ubi10-relay does COPY . . before npm ci; existence is enough
+          deps = {}
+          pkg = json.load(open(os.path.join(root, 'package.json')))
+          for section in ('dependencies', 'devDependencies', 'optionalDependencies'):
+              deps.update(pkg.get(section) or {})
+          bad = []
+          for name, spec in sorted(deps.items()):
+              if not isinstance(spec, str) or not spec.startswith('file:'):
+                  continue
+              rel = spec[len('file:'):].strip('/')
+              if not os.path.isdir(os.path.join(root, rel)):
+                  bad.append(f'{name} -> {spec}: directory missing at this SHA')
+              elif copied_roots and not any(rel == r or rel.startswith(r + '/') for r in copied_roots):
+                  bad.append(f'{name} -> {spec}: not under a root the Containerfile COPYs before npm ci ({", ".join(copied_roots)}) - add a COPY line')
+          for b in bad:
+              print(f'::error::file: dependency problem - {b}')
+          sys.exit(1 if bad else 0)
+          PY
           mkdir -p "$RUNNER_TEMP/upstream/containers"
           cp "$REPO/containers/Containerfile.ubi10-relay" \
              "$RUNNER_TEMP/upstream/containers/"
@@ -401,7 +442,7 @@ jobs:
           echo "relay started and stayed up with a dummy key"
           UID_IN_IMAGE="$(podman inspect localhost/${RELAY_IMAGE}:amd64 --format '{{.Config.User}}')"
           [ "$UID_IN_IMAGE" = "1001" ] || { echo "::error::expected USER 1001, got '${UID_IN_IMAGE}'"; exit 1; }
-          podman rm -f relay-smoke
+          podman rm -f relay-smoke || echo "::warning::relay-smoke cleanup failed (runner podman netns); assertions already passed"
 
       - name: Export, SBOM, scan
         run: |
@@ -565,7 +606,13 @@ jobs:
           UID_IN_IMAGE="$(podman inspect localhost/${PROXY_IMAGE}:amd64 --format '{{.Config.User}}')"
           [ "$UID_IN_IMAGE" = "1001" ] || { echo "::error::expected USER 1001, got '${UID_IN_IMAGE}'"; exit 1; }
 
-          podman rm -f smoke-proxy smoke-redis
+          # Cleanup is not an assertion. On 2026-11-04 and -05 the amd64 runner's
+          # rootless podman failed to tear down the smoke network ("rootless
+          # netns: kill network process: permission denied", exit 125) AFTER
+          # every check above had passed, and that alone went red.
+          podman rm -f smoke-proxy smoke-redis \
+            || echo "::warning::smoke container cleanup failed (runner podman netns); assertions already passed"
+          podman network rm -f wm-smoke >/dev/null 2>&1 || true
 
       - name: Export, SBOM, scan
         run: |
