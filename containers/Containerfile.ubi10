@@ -47,6 +47,11 @@ COPY package.json package-lock.json ./
 # Dockerfile does the same. Copying vendor/ here keeps the dependency layer
 # cacheable (it only changes when upstream bumps a vendored package).
 COPY vendor/ ./vendor/
+# Second vendored-package root, added upstream 2026-11-05: package.json gained
+# `"deepmerge": "file:scripts/vendor/deepmerge"`. Same reasoning as vendor/.
+# build.yml preflights every `file:` dependency in package.json against these
+# two roots, so a third root fails the run by name instead of as npm ENOENT.
+COPY scripts/vendor/ ./scripts/vendor/
 # The lockfile pins the vendored packages as real entries
 # (braces@3.0.4-worldmonitor.1), which npm only honours when file: deps are
 # installed as copies, not symlinks (install-links=true). Without it:
