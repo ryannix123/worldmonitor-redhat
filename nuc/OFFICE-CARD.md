@@ -12,6 +12,17 @@ software. It updates itself overnight and needs no maintenance.
 Bookmark that. Add `?view=global&timeRange=24h` to the address to get the
 24-hour global view.
 
+**Ask it a question.** If the wall has a second tab (press Ctrl-Tab on the
+keyboard), that is an assistant that can only read the dashboard's data. Ask
+it things like "what changed in the Red Sea since yesterday" or "summarize
+today's security advisories for Africa". It cites the data it used. Ctrl-Tab
+back to the map when done; start a new chat rather than continuing someone
+else's.
+
+**After any restart**, the wall takes about 20 minutes to fill in completely.
+Security Advisories is the last panel to come back. The line at the very
+bottom of the screen should say "Digest coverage: complete".
+
 **If the screen looks stuck or blank.**
 1. Wait five minutes — it may be mid-update (it updates around 5 a.m. and
    reboots early Sunday mornings).

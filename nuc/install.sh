@@ -4,13 +4,16 @@
 # =============================================================================
 # Run ONCE, as root, from this directory, on a fresh Fedora box:
 #
-#   sudo ./install.sh                     # prompts for the OpenRouter key
+#   sudo ./install.sh                     # prompts for the OpenRouter key + optional keys
 #   sudo ./install.sh --env /path/.env    # reuse an existing podman/.env
+#   sudo ./install.sh --no-openclaw       # skip the "ask the wall" agent entirely
 #
 # What it sets up:
 #   * an unprivileged service user `wm` (rootless containers, no root daemon)
-#   * the five containers as systemd user units (Quadlet), started at boot
-#     with no login required (loginctl linger)
+#   * the five World Monitor containers as systemd user units (Quadlet),
+#     started at boot with no login required (loginctl linger)
+#   * the OpenClaw agent (sixth unit): hourly SITREP from the MCP server, and a
+#     chat tab on the wall once OPENCLAW_UI=1 in openclaw.env (default 0)
 #   * podman-auto-update: nightly pull of new images with automatic rollback
 #     if an updated container fails its healthcheck
 #   * dnf-automatic for OS security updates + a weekly reboot window
@@ -24,6 +27,7 @@ WM_USER=wm
 HOSTNAME_NEW=wm-armory
 TZ_NEW=America/Indiana/Indianapolis
 ENV_SRC=""
+WITH_OPENCLAW=1
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
@@ -36,6 +40,7 @@ while [ $# -gt 0 ]; do
     --user) WM_USER="$2"; shift 2 ;;
     --hostname) HOSTNAME_NEW="$2"; shift 2 ;;
     --tz) TZ_NEW="$2"; shift 2 ;;
+    --no-openclaw) WITH_OPENCLAW=0; shift ;;
     -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) die "unknown flag: $1" ;;
   esac
@@ -44,6 +49,8 @@ done
 [ "$(id -u)" = 0 ] || die "run as root (sudo ./install.sh)"
 grep -qi fedora /etc/os-release || die "this installer targets Fedora"
 for f in quadlet/worldmonitor.container quadlet/redis.container seed-loop.sh env.example \
+         quadlet/openclaw.container openclaw/mcp-servers.json openclaw/openclaw.env.example \
+         openclaw/register-automations.sh openclaw/wm-hourly-sitrep.txt systemd/openclaw-automations.service \
          systemd/podman-auto-update.timer.override.conf systemd/wm-weekly-reboot.timer; do
   [ -f "$HERE/$f" ] || die "missing $f — run from the nuc/ directory"
 done
@@ -95,6 +102,16 @@ install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE"/quadlet/* "$QDIR/"
 install -o "$WM_USER" -g "$WM_USER" -m 755 "$HERE/seed-loop.sh" "$CFG/seed-loop.sh"
 install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE/systemd/podman-auto-update.timer.override.conf" \
         "$UDIR/podman-auto-update.timer.d/override.conf"
+if [ "$WITH_OPENCLAW" = 1 ]; then
+  log "Installing the OpenClaw agent files → $CFG/openclaw"
+  install -d -o "$WM_USER" -g "$WM_USER" -m 755 "$CFG/openclaw" "$CFG/openclaw/skills/worldmonitor-sitrep"
+  install -o "$WM_USER" -g "$WM_USER" -m 755 "$HERE/openclaw/register-automations.sh" "$CFG/openclaw/"
+  install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE/openclaw/wm-hourly-sitrep.txt" "$HERE/openclaw/mcp-servers.json" "$CFG/openclaw/"
+  install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE/openclaw/skills/worldmonitor-sitrep/SKILL.md" "$CFG/openclaw/skills/worldmonitor-sitrep/"
+  install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE/systemd/openclaw-automations.service" "$UDIR/"
+else
+  rm -f "$QDIR/openclaw.container" "$QDIR/openclaw-config.volume" "$QDIR/openclaw-workspace.volume" "$UDIR/openclaw-automations.service"
+fi
 
 # ---- 6. secrets / keys -------------------------------------------------------
 ENV_FILE="$CFG/.env"
@@ -127,19 +144,66 @@ if [ -z "$(getvar OPENROUTER_API_KEY)" ]; then
   read -r key </dev/tty
   [ -n "$key" ] && setvar OPENROUTER_API_KEY "$key" || warn "no OpenRouter key — AI panels will show UNAVAILABLE until one is set in $ENV_FILE"
 fi
+# Optional data-source keys (all free registrations). Enter to skip; only
+# asked for when blank, so re-running never nags. Same list as podman/deploy.sh -keys.
+askopt() {  # askopt VAR "label"
+  [ -n "$(getvar "$1")" ] && return 0
+  printf '  %s (optional, Enter to skip):\n  > ' "$2"
+  read -r v </dev/tty
+  [ -n "$v" ] && setvar "$1" "$v"
+  return 0
+}
+echo
+askopt WINDY_API_KEY     "Windy key — live webcams tile (api.windy.com, free tier)"
+askopt DTM_API_KEY       "IOM DTM key — displacement panel (dtm-apim-portal.iom.int)"
+askopt UCDP_ACCESS_TOKEN "UCDP token — armed-conflict data"
+askopt ACLED_EMAIL       "ACLED login email — needs a Research-tier account (a .edu address); the old API key does not work"
+[ -n "$(getvar ACLED_EMAIL)" ] && askopt ACLED_PASSWORD "ACLED password"
+askopt FINNHUB_API_KEY   "Finnhub key — market data"
+askopt FRED_API_KEY      "FRED key — economic data"
 chown "$WM_USER:$WM_USER" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+
+# ---- 6b. OpenClaw agent -----------------------------------------------------
+OC_ENV="$CFG/openclaw.env"
+if [ "$WITH_OPENCLAW" = 1 ]; then
+  log "Configuring the OpenClaw agent"
+  [ -f "$OC_ENV" ] || install -o "$WM_USER" -g "$WM_USER" -m 600 "$HERE/openclaw/openclaw.env.example" "$OC_ENV"
+  ocset() { if grep -qE "^$1=" "$OC_ENV"; then sed -i "s|^$1=.*|$1=$2|" "$OC_ENV"; else printf '%s=%s\n' "$1" "$2" >> "$OC_ENV"; fi; }
+  ocget() { grep -E "^$1=" "$OC_ENV" | head -1 | cut -d= -f2-; }
+  [ -n "$(ocget OPENCLAW_GATEWAY_TOKEN)" ] || ocset OPENCLAW_GATEWAY_TOKEN "$(openssl rand -hex 32)"
+  # A second World Monitor key, dedicated to the agent: appended to
+  # WORLDMONITOR_VALID_KEYS (comma-separated upstream) so it can be revoked on
+  # its own. Idempotent: only minted once, only appended once.
+  if [ -z "$(ocget OPENCLAW_MCP_KEY_WORLDMONITOR)" ]; then
+    k="wm_$(openssl rand -hex 24)"
+    ocset OPENCLAW_MCP_KEY_WORLDMONITOR "$k"
+    setvar WORLDMONITOR_VALID_KEYS "$(getvar WORLDMONITOR_VALID_KEYS),$k"
+  fi
+  # Model: OpenRouter by default, on the same spend-capped key. Purdue GenAI
+  # Studio later = edit the three OPENCLAW_OPENAI_* lines in $OC_ENV.
+  [ -n "$(ocget OPENCLAW_OPENAI_API_KEY)" ] || ocset OPENCLAW_OPENAI_API_KEY "$(getvar OPENROUTER_API_KEY)"
+  # The MCP spec is one line of JSON in the env file (Quadlet has no file refs).
+  ocset OPENCLAW_MCP_SERVERS "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])),separators=(",",":")))' "$HERE/openclaw/mcp-servers.json")"
+  chown "$WM_USER:$WM_USER" "$OC_ENV"; chmod 600 "$OC_ENV"
+fi
 
 # ---- 7. pull + start ----------------------------------------------------------
 log "Pulling images as $WM_USER (first time only — a few minutes)"
-for img in quay.io/ryan_nix/worldmonitor-openshift:latest \
-           quay.io/ryan_nix/worldmonitor-openshift:relay-latest \
-           quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest \
-           docker.io/library/redis:8-alpine; do
+IMAGES="quay.io/ryan_nix/worldmonitor-openshift:latest
+        quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+        quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest
+        docker.io/library/redis:8-alpine"
+[ "$WITH_OPENCLAW" = 1 ] && IMAGES="$IMAGES quay.io/ryan_nix/openclaw-openshift:latest"
+for img in $IMAGES; do
   as_wm podman pull -q "$img" >/dev/null
 done
 log "Starting the stack"
 as_wm systemctl --user daemon-reload
 as_wm systemctl --user start worldmonitor.service seeders.service
+if [ "$WITH_OPENCLAW" = 1 ]; then
+  as_wm systemctl --user start openclaw.service
+  as_wm systemctl --user enable --now openclaw-automations.service >/dev/null
+fi
 as_wm systemctl --user enable --now podman-auto-update.timer >/dev/null
 
 # ---- 8. OS updates + weekly reboot -------------------------------------------
@@ -175,3 +239,13 @@ cat <<REPORT
   Keys live in: $ENV_FILE  (edit, then: systemctl --user restart worldmonitor seeders)
   Optional wall-display mode:  sudo ./kiosk/setup-kiosk.sh
 REPORT
+if [ "$WITH_OPENCLAW" = 1 ]; then cat <<REPORT
+
+  OpenClaw agent: running (hourly SITREP at :07). The chat tab is OFF until you
+  set OPENCLAW_UI=1 in $OC_ENV and restart the kiosk session (or reboot).
+  Control UI on this box only:  http://localhost:18789/?token=<OPENCLAW_GATEWAY_TOKEN from $OC_ENV>
+  If the UI asks to pair this browser the first time, approve it with:
+    sudo -u $WM_USER XDG_RUNTIME_DIR=/run/user/$WM_UID podman exec openclaw node dist/index.js devices list
+    sudo -u $WM_USER XDG_RUNTIME_DIR=/run/user/$WM_UID podman exec openclaw node dist/index.js devices approve <id>
+REPORT
+fi
