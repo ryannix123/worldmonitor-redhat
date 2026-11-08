@@ -145,7 +145,11 @@ services:
     command: >
       redis-server
       --requirepass "${REDIS_PASSWORD}"
-      --maxmemory 256mb
+      # 1 GB, not 256 MB: 155 seeders + per-language digest snapshots + the KEV
+      # store sat at 162 MB on 2026-11-08 with evicted_keys:0; allkeys-lru
+      # eviction would show up as random panels going "unavailable" with no
+      # error anywhere, so leave headroom rather than tune it.
+      --maxmemory 1gb
       --maxmemory-policy allkeys-lru
     volumes:
       - redis-data:/data

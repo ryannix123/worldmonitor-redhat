@@ -46,7 +46,7 @@ spec:
             - --requirepass
             - $(REDIS_PASSWORD)
             - --maxmemory
-            - 256mb
+            - 1gb
             - --maxmemory-policy
             - allkeys-lru
             - --dir
@@ -103,10 +103,12 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 384Mi
+              # maxmemory 1gb plus Redis overhead; the limit must sit above
+              # maxmemory or the kernel OOM-kills before LRU gets to run.
+              memory: 1280Mi
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
