@@ -1,0 +1,54 @@
+# OpenClaw — the "ask the wall" agent. Same NUC, same Podman network, one more
+# unit. It reaches World Monitor's MCP server at http://worldmonitor:3000/api/mcp
+# inside the worldmonitor network and is published ONLY on localhost:18789, so
+# the kiosk browser on this box is its one client (no device pairing for
+# laptops, no token on the office card). Chat appears as the kiosk's second
+# tab when OPENCLAW_UI=1 in openclaw.env; with OPENCLAW_UI=0 the gateway still
+# runs the hourly SITREP automation but nothing is visible on the wall.
+#
+# Image: the ubi10 variant from ryannix123/openclaw-on-openshift (nightly).
+# Its entrypoint reads OPENCLAW_MCP_SERVERS, OPENCLAW_OPENAI_* and
+# OPENCLAW_GATEWAY_TOKEN from the env file install.sh renders.
+#
+# What this agent is NOT given: any messaging channel (no Telegram/Rocket.Chat/
+# WhatsApp), any MCP server other than World Monitor, and the two World Monitor
+# tools that act rather than read (report_issue, start_upgrade — see
+# openclaw/mcp-servers.json). Everything it can do is read public data and
+# write prose.
+[Unit]
+Description=OpenClaw — World Monitor agent (Control UI on localhost:18789)
+Requires=worldmonitor.service
+After=worldmonitor.service
+
+[Container]
+ContainerName=openclaw
+Image=quay.io/ryan_nix/openclaw-openshift:latest
+AutoUpdate=registry
+Network=worldmonitor.network
+PublishPort=127.0.0.1:18789:18789
+EnvironmentFile=%h/.config/worldmonitor/openclaw.env
+# Persistent config (openclaw.json, device pairings, automations) and the agent
+# workspace (SITREP snapshots). Skills are bind-mounted read-only from the kit.
+Volume=openclaw-config.volume:/opt/openclaw/.openclaw
+Volume=openclaw-workspace.volume:/opt/openclaw/workspace
+Volume=%h/.config/worldmonitor/openclaw/skills:/opt/openclaw/workspace/skills:ro,Z
+Environment=OPENCLAW_CONFIG_DIR=/opt/openclaw/.openclaw
+Environment=OPENCLAW_AUTH_MODE=token
+# The only client is this box's own browser; nothing is behind a proxy.
+Environment=OPENCLAW_TRUSTED_PROXIES=
+# node, not curl: the ubi10 image is not guaranteed to carry curl. Any HTTP
+# answer short of a 5xx means the gateway is up (the UI page itself is public;
+# the token gates the websocket behind it).
+HealthCmd=node -e "fetch('http://127.0.0.1:18789/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+HealthInterval=30s
+HealthStartPeriod=90s
+HealthRetries=5
+Notify=healthy
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

@@ -53,8 +53,53 @@ Firefox in kiosk mode, screen never blanks. (Needs Fedora Workstation.)
 | `seed-loop.sh` | the hourly seeder loop (mounted into the `seeders` container) |
 | `systemd/podman-auto-update.timer.override.conf` | pull schedule: 05:00 local |
 | `systemd/wm-weekly-reboot.*` | Sunday 04:30 reboot (kernel updates, browser memory) |
-| `kiosk/` | optional wall-display mode |
+| `kiosk/` | optional wall-display mode (two tabs when the chat is on: Ctrl-Tab) |
+| `quadlet/openclaw.container`, `openclaw/` | the "ask the wall" agent: hourly SITREP from the MCP server, optional chat tab — see below |
+| `systemd/openclaw-automations.service` | registers the SITREP job against the gateway on every boot |
 | `OFFICE-CARD.md` | one page to print and leave next to the box |
+
+## The OpenClaw agent ("ask the wall")
+
+A sixth unit, installed by default (`--no-openclaw` to skip). It runs
+[OpenClaw](https://github.com/ryannix123/openclaw-on-openshift) from the same
+nightly image as the OpenShift deployment, pointed at World Monitor's MCP
+server over the private Podman network, and does two things:
+
+1. **Hourly SITREP** at :07, every hour, using the `worldmonitor-sitrep` skill
+   (same prompt and skill as the OpenShift project). It keeps the previous
+   run's snapshot in the workspace volume so "what changed" is a real diff.
+   Runs whether or not anyone is looking.
+2. **Chat tab on the wall**, off by default. Set `OPENCLAW_UI=1` in
+   `~wm/.config/worldmonitor/openclaw.env` and restart the kiosk session; the
+   wall becomes two Firefox tabs, Ctrl-Tab between them. Someone at the
+   conference-table keyboard can ask "what changed in the Red Sea since
+   yesterday" and get an answer with the tool calls as citations.
+
+What makes it safe to leave in an office:
+
+- **One client.** Port 18789 is bound to `127.0.0.1`; the kiosk browser on the
+  box is the only thing that can reach it. No device pairing for laptops, no
+  token on the office card.
+- **Read-only.** World Monitor is the only MCP server, and the include list in
+  `openclaw/mcp-servers.json` is every tool except the two that act
+  (`report_issue`, `start_upgrade`). No channels, no shell, no browser.
+- **Its own World Monitor key.** `install.sh` mints a second entry in
+  `WORLDMONITOR_VALID_KEYS` for the agent, so it can be revoked without
+  touching the relay.
+- **The model is one env block.** OpenRouter by default (same spend-capped
+  key); Purdue GenAI Studio is the three `OPENCLAW_OPENAI_*` lines and a
+  restart. That is the only thing that leaves the building, and it carries
+  the question plus public data, never anything about the unit.
+
+Day-2:
+
+```bash
+$WM systemctl --user status openclaw openclaw-automations
+$WM podman logs --tail 50 openclaw
+$WM podman exec openclaw node dist/index.js automations list       # the SITREP job
+$WM podman exec openclaw node dist/index.js devices list           # if the UI asks to pair
+$WM systemctl --user restart openclaw                              # after editing openclaw.env
+```
 
 ## How updates work
 
@@ -83,7 +128,7 @@ prefix is what makes `systemctl --user` work from a root shell):
 
 ```bash
 WM='sudo -u wm XDG_RUNTIME_DIR=/run/user/'$(id -u wm)
-$WM systemctl --user status worldmonitor ais-relay redis-rest redis seeders
+$WM systemctl --user status worldmonitor ais-relay redis-rest redis seeders openclaw
 $WM podman logs --tail 50 worldmonitor
 $WM podman logs -f seeders | grep -E 'OK|SKIP|FAIL|Done:'
 $WM systemctl --user restart worldmonitor seeders     # after editing .env
