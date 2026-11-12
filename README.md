@@ -396,17 +396,20 @@ files so a bump is reviewed, not blindly merged.
 
 ### Build-time source patches
 
-The app image is built from upstream `main` as-is, with three guarded patches
+The app image is built from upstream `main` as-is, with two guarded patches
 applied to the source before `vite build`. Each patch asserts its anchor
 exists exactly once and fails the build otherwise, so an upstream change
 surfaces as a red nightly with a named cause rather than a silently
 unpatched image.
 
+This has already happened once: a third patch (reversing Country Instability
+rings on the 3D globe) failed its own guard on 2026-11-12 when upstream shipped
+the identical fix in #10568, and was deleted the same day.
+
 | Patch | Where | Why |
 |---|---|---|
 | Digest budget | `Containerfile.ubi10` (inline sed) | Makes the sidecar's feed-fetch budget env-tunable (`DIGEST_RESPONSE_LIMIT_MS`, `DIGEST_ADOPTION_BUDGET_MS`); Vercel's 25 s ceiling makes no sense on a self-hosted box |
 | Boundary override winding | `containers/patch-country-overrides.mjs` | The CDN file `maps.worldmonitor.app/country-boundary-overrides.geojson` has a clockwise outer ring (Pakistan); the 3D globe draws that as its complement, so with Country Instability on the globe is one colour wash. Rewinds overrides to RFC 7946 before adoption. Drop when upstream fixes the data or adds its own rewind (the patch exits 1 if it sees one) |
-| Globe CII ring reversal | `containers/patch-globe-cii-winding.mjs` | The 3D globe draws a ring's complement when it is wound the RFC 7946 way; upstream reverses rings for the conflict-zone layer but not for Country Instability, so every scored country rendered inside-out and the globe was one colour wash. Routes CII rings through the same `getReversedRing()` the conflict layer uses. Runs after the override patch so a mis-wound override is normalised first |
 
 ### CI secrets
 
