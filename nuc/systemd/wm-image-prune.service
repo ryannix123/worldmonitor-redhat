@@ -1,0 +1,12 @@
+# User unit for the `wm` account (rootless Podman). podman-auto-update pulls a
+# new image every night and never deletes the one it replaced; at ~1.4 GB a
+# night the disk fills in a few months with nobody there to notice (seen on the
+# Mac on 2026-11-20: pulls failed with "no space left on device"). Dangling
+# layers are the only thing removed — images in use by a container are kept, so
+# auto-update's rollback target is safe.
+[Unit]
+Description=World Monitor — prune dangling container images
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman image prune -f

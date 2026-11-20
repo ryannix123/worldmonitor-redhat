@@ -217,6 +217,14 @@ do_update() {
   echo
   bold "Restarting onto the updated images..."
   compose up -d
+  # Retire the layers the pull just replaced. Nothing deleted this way is in
+  # use (the new containers are up), so there is no rollback cost; without it
+  # ~1.4 GB of superseded layers accumulate per update until the Podman
+  # machine's disk is full and pulls fail with "no space left on device"
+  # (2026-11-20, after ~50 nightly updates).
+  local pruned
+  pruned="$(podman image prune -f 2>/dev/null | wc -l | tr -d ' ')"
+  [ "${pruned:-0}" -gt 0 ] && info "Pruned $pruned superseded image layer(s)"
   echo
   info "After:"; show_versions
   ok "Updated and running.  $URL"
