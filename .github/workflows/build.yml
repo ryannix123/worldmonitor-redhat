@@ -22,6 +22,16 @@ env:
   IMAGE_NS: ryan_nix
   IMAGE_NAME: worldmonitor-openshift
   UPSTREAM_REPO: koala73/worldmonitor
+  # How long per-commit tags live on Quay. Quay reads `quay.expires-after` as a
+  # LABEL on image manifests (the <sha>-amd64 / -arm64 tags, set at build) and
+  # as an ANNOTATION on image indexes (the <sha> manifest-list tags, set at
+  # assembly). The three floating tags (latest, relay-latest, redis-rest-latest)
+  # carry neither and never expire. A `latest` index only ever references
+  # children pushed the same night, so children expiring at this horizon cannot
+  # leave a live tag unpullable. Expired tags sit in Quay's time machine (14 d)
+  # before GC, so a mistake is recoverable. Without this, every nightly left
+  # 12 tags behind forever.
+  QUAY_TAG_TTL: 30d
 
 jobs:
   # Resolve the upstream commit ONCE so every matrix leg builds the identical
@@ -195,6 +205,7 @@ jobs:
             --build-arg VERSION="${{ needs.resolve.outputs.short }}" \
             --build-arg VCS_REF="${{ needs.resolve.outputs.sha }}" \
             --build-arg BUILD_DATE="${{ needs.resolve.outputs.date }}" \
+            --label "quay.expires-after=${QUAY_TAG_TTL}" \
             -f containers/Containerfile.ubi10 \
             -t "localhost/${IMAGE_NAME}:${{ matrix.arch }}" \
             .
@@ -392,6 +403,7 @@ jobs:
             --build-arg VERSION="${{ needs.resolve.outputs.short }}" \
             --build-arg VCS_REF="${{ needs.resolve.outputs.sha }}" \
             --build-arg BUILD_DATE="${{ needs.resolve.outputs.date }}" \
+            --label "quay.expires-after=${QUAY_TAG_TTL}" \
             -f containers/Containerfile.ubi10-relay \
             -t "localhost/${RELAY_IMAGE}:${{ matrix.arch }}" \
             .
@@ -549,6 +561,7 @@ jobs:
             --build-arg VERSION="${{ needs.resolve.outputs.short }}" \
             --build-arg VCS_REF="${{ needs.resolve.outputs.sha }}" \
             --build-arg BUILD_DATE="${{ needs.resolve.outputs.date }}" \
+            --label "quay.expires-after=${QUAY_TAG_TTL}" \
             -f containers/Containerfile.redis-rest \
             -t "localhost/${PROXY_IMAGE}:${{ matrix.arch }}" \
             .
@@ -685,11 +698,20 @@ jobs:
           #   app:   <sha>-amd64  + <sha>-arch        -> <sha>,        latest
           #   relay: relay-<sha>-amd64 + ...-arm64    -> relay-<sha>,  relay-latest
           #   proxy: redis-rest-<sha>-amd64 + ...     -> redis-rest-<sha>, redis-rest-latest
+          # Per-commit index tags ($list_a) get an expiry annotation on the index
+          # itself; the floating tag ($list_b) gets none. The per-arch children
+          # already carry the matching LABEL from the build step.
+          # `manifest create --annotation` sets index-level annotations (podman 5+;
+          # ubuntu-latest is 26.04). Quay honours quay.expires-after there.
           assemble() {
             local per_arch_prefix="$1" list_a="$2" list_b="$3"
             for TAG in "$list_a" "$list_b"; do
               podman manifest rm "${DEST}:${TAG}" 2>/dev/null || true
-              podman manifest create "${DEST}:${TAG}"
+              if [ "$TAG" = "$list_a" ]; then
+                podman manifest create --annotation "quay.expires-after=${QUAY_TAG_TTL}" "${DEST}:${TAG}"
+              else
+                podman manifest create "${DEST}:${TAG}"
+              fi
               podman manifest add "${DEST}:${TAG}" "docker://${DEST}:${per_arch_prefix}-amd64"
               podman manifest add "${DEST}:${TAG}" "docker://${DEST}:${per_arch_prefix}-arm64"
               podman manifest push --all "${DEST}:${TAG}" "docker://${DEST}:${TAG}"

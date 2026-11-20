@@ -411,6 +411,19 @@ the identical fix in #10568, and was deleted the same day.
 | Digest budget | `Containerfile.ubi10` (inline sed) | Makes the sidecar's feed-fetch budget env-tunable (`DIGEST_RESPONSE_LIMIT_MS`, `DIGEST_ADOPTION_BUDGET_MS`); Vercel's 25 s ceiling makes no sense on a self-hosted box |
 | Boundary override winding | `containers/patch-country-overrides.mjs` | The CDN file `maps.worldmonitor.app/country-boundary-overrides.geojson` has a clockwise outer ring (Pakistan); the 3D globe draws that as its complement, so with Country Instability on the globe is one colour wash. Rewinds overrides to RFC 7946 before adoption. Drop when upstream fixes the data or adds its own rewind (the patch exits 1 if it sees one) |
 
+### Tag retention on Quay
+
+Every nightly leaves 12 tags behind (3 flavours × `<sha>`, `<sha>-amd64`,
+`<sha>-arm64`, plus the floating one). Per-commit tags now carry
+`quay.expires-after=30d` — as a LABEL on the per-arch images (set at build)
+and as an ANNOTATION on the `<sha>` manifest lists (set at assembly). Quay
+expires them 30 days after push and garbage-collects 14 days after that. The
+floating tags (`latest`, `relay-latest`, `redis-rest-latest`) carry neither
+and never expire. The TTL is `QUAY_TAG_TTL` in `build.yml`.
+
+If a `stable` promotion tag is ever added, push it as its own manifest list
+without the annotation; re-tagging an expiring index would inherit the expiry.
+
 ### CI secrets
 
 | Secret | Purpose |
