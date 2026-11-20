@@ -53,6 +53,7 @@ Firefox in kiosk mode, screen never blanks. (Needs Fedora Workstation.)
 | `seed-loop.sh` | the hourly seeder loop (mounted into the `seeders` container) |
 | `systemd/podman-auto-update.timer.override.conf` | pull schedule: 05:00 local |
 | `systemd/wm-weekly-reboot.*` | Sunday 04:30 reboot (kernel updates, browser memory) |
+| `systemd/wm-image-prune.*` | Sunday 04:00 `podman image prune -f` — auto-update never deletes the images it replaces |
 | `kiosk/` | optional wall-display mode (two tabs when the chat is on: Ctrl-Tab) |
 | `quadlet/openclaw.container`, `openclaw/` | the "ask the wall" agent: hourly SITREP from the MCP server, optional chat tab — see below |
 | `systemd/openclaw-automations.service` | registers the SITREP job against the gateway on every boot |

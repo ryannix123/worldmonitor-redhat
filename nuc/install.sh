@@ -51,7 +51,8 @@ grep -qi fedora /etc/os-release || die "this installer targets Fedora"
 for f in quadlet/worldmonitor.container quadlet/redis.container seed-loop.sh env.example \
          quadlet/openclaw.container openclaw/mcp-servers.json openclaw/openclaw.env.example \
          openclaw/register-automations.sh openclaw/wm-hourly-sitrep.txt systemd/openclaw-automations.service \
-         systemd/podman-auto-update.timer.override.conf systemd/wm-weekly-reboot.timer; do
+         systemd/podman-auto-update.timer.override.conf systemd/wm-weekly-reboot.timer \
+         systemd/wm-image-prune.service systemd/wm-image-prune.timer; do
   [ -f "$HERE/$f" ] || die "missing $f — run from the nuc/ directory"
 done
 
@@ -205,6 +206,9 @@ if [ "$WITH_OPENCLAW" = 1 ]; then
   as_wm systemctl --user enable --now openclaw-automations.service >/dev/null
 fi
 as_wm systemctl --user enable --now podman-auto-update.timer >/dev/null
+install -o "$WM_USER" -g "$WM_USER" -m 644 "$HERE/systemd/wm-image-prune.service" "$HERE/systemd/wm-image-prune.timer" "$UDIR/"
+as_wm systemctl --user daemon-reload
+as_wm systemctl --user enable --now wm-image-prune.timer >/dev/null
 
 # ---- 8. OS updates + weekly reboot -------------------------------------------
 log "Enabling automatic OS updates and the Sunday 04:30 reboot window"
