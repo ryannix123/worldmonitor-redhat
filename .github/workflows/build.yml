@@ -22,15 +22,16 @@ env:
   IMAGE_NS: ryan_nix
   IMAGE_NAME: worldmonitor-openshift
   UPSTREAM_REPO: koala73/worldmonitor
-  # How long per-commit tags live on Quay. Quay reads `quay.expires-after` as a
-  # LABEL on image manifests (the <sha>-amd64 / -arm64 tags, set at build) and
-  # as an ANNOTATION on image indexes (the <sha> manifest-list tags, set at
-  # assembly). The three floating tags (latest, relay-latest, redis-rest-latest)
-  # carry neither and never expire. A `latest` index only ever references
-  # children pushed the same night, so children expiring at this horizon cannot
-  # leave a live tag unpullable. Expired tags sit in Quay's time machine (14 d)
-  # before GC, so a mistake is recoverable. Without this, every nightly left
-  # 12 tags behind forever.
+  # How long per-commit tags live on Quay. Quay reads `quay.expires-after` only
+  # as a LABEL on images; it IGNORES annotations on manifest lists, and gives a
+  # list the expiry of the labeled images inside it. So:
+  #   - per-arch images (<sha>-amd64 / -arm64) are built with the label;
+  #   - the <sha> lists reference them, and expire with them;
+  #   - the floating lists (latest, relay-latest, redis-rest-latest) reference
+  #     unlabeled copies made at assembly (--unsetlabel), so they never expire.
+  # Verified against Quay's tag API on 2026-11-21: before this, `latest` itself
+  # carried the 14-day expiry. Expired tags sit in Quay's time machine (14 d)
+  # before GC, so a mistake is recoverable.
   QUAY_TAG_TTL: 14d
 
 jobs:
@@ -698,25 +699,34 @@ jobs:
           #   app:   <sha>-amd64  + <sha>-arch        -> <sha>,        latest
           #   relay: relay-<sha>-amd64 + ...-arm64    -> relay-<sha>,  relay-latest
           #   proxy: redis-rest-<sha>-amd64 + ...     -> redis-rest-<sha>, redis-rest-latest
-          # Per-commit index tags ($list_a) get an expiry annotation on the index
-          # itself; the floating tag ($list_b) gets none. The per-arch children
-          # already carry the matching LABEL from the build step.
-          # `manifest create --annotation` sets index-level annotations (podman 5+;
-          # ubuntu-latest is 26.04). Quay honours quay.expires-after there.
+          # Quay takes a list's expiry from the labels of the images inside
+          # it and ignores list annotations. So the per-commit list ($list_a)
+          # references the labeled per-arch images and expires with them, and
+          # the floating list ($list_b) references unlabeled copies, which
+          # never expire. A copy only drops one label: same layers, new config,
+          # no RUN step, so building the arm64 copy here needs no emulation.
           assemble() {
-            local per_arch_prefix="$1" list_a="$2" list_b="$3"
-            for TAG in "$list_a" "$list_b"; do
-              podman manifest rm "${DEST}:${TAG}" 2>/dev/null || true
-              if [ "$TAG" = "$list_a" ]; then
-                podman manifest create --annotation "quay.expires-after=${QUAY_TAG_TTL}" "${DEST}:${TAG}"
-              else
-                podman manifest create "${DEST}:${TAG}"
-              fi
-              podman manifest add "${DEST}:${TAG}" "docker://${DEST}:${per_arch_prefix}-amd64"
-              podman manifest add "${DEST}:${TAG}" "docker://${DEST}:${per_arch_prefix}-arm64"
-              podman manifest push --all "${DEST}:${TAG}" "docker://${DEST}:${TAG}"
-              echo "pushed ${DEST}:${TAG}"
+            local per_arch_prefix="$1" list_a="$2" list_b="$3" arch
+
+            podman manifest rm "${DEST}:${list_a}" 2>/dev/null || true
+            podman manifest create "${DEST}:${list_a}"
+            for arch in amd64 arm64; do
+              podman manifest add "${DEST}:${list_a}" "docker://${DEST}:${per_arch_prefix}-${arch}"
             done
+            podman manifest push --all "${DEST}:${list_a}" "docker://${DEST}:${list_a}"
+            echo "pushed ${DEST}:${list_a} (expires after ${QUAY_TAG_TTL})"
+
+            podman manifest rm "${DEST}:${list_b}" 2>/dev/null || true
+            podman manifest create "${DEST}:${list_b}"
+            for arch in amd64 arm64; do
+              ctx=$(mktemp -d)
+              echo "FROM ${DEST}:${per_arch_prefix}-${arch}" > "${ctx}/Containerfile"
+              podman build --platform "linux/${arch}" --unsetlabel quay.expires-after \
+                -t "localhost/${list_b}-${arch}" "${ctx}"
+              podman manifest add "${DEST}:${list_b}" "containers-storage:localhost/${list_b}-${arch}"
+            done
+            podman manifest push --all "${DEST}:${list_b}" "docker://${DEST}:${list_b}"
+            echo "pushed ${DEST}:${list_b} (no expiry)"
           }
           assemble "${SHORT}"            "${SHORT}"            "latest"
           assemble "relay-${SHORT}"      "relay-${SHORT}"      "relay-latest"

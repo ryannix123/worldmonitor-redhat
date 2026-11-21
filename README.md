@@ -414,15 +414,17 @@ the identical fix in #10568, and was deleted the same day.
 ### Tag retention on Quay
 
 Every nightly leaves 12 tags behind (3 flavours × `<sha>`, `<sha>-amd64`,
-`<sha>-arm64`, plus the floating one). Per-commit tags now carry
-`quay.expires-after=14d` — as a LABEL on the per-arch images (set at build)
-and as an ANNOTATION on the `<sha>` manifest lists (set at assembly). Quay
-expires them 14 days after push and garbage-collects 14 days after that. The
-floating tags (`latest`, `relay-latest`, `redis-rest-latest`) carry neither
-and never expire. The TTL is `QUAY_TAG_TTL` in `build.yml`.
+`<sha>-arm64`, plus the floating one). Quay reads `quay.expires-after` only
+as a LABEL on images, and gives a manifest list the expiry of the images
+inside it (it ignores annotations on lists). So the per-arch images are built
+with `quay.expires-after=14d`, the `<sha>` lists reference them and expire
+with them, and the floating tags (`latest`, `relay-latest`,
+`redis-rest-latest`) reference unlabeled copies made at assembly, so they
+never expire. Quay garbage-collects expired tags 14 days later. The TTL is
+`QUAY_TAG_TTL` in `build.yml`.
 
-If a `stable` promotion tag is ever added, push it as its own manifest list
-without the annotation; re-tagging an expiring index would inherit the expiry.
+If a `stable` promotion tag is ever added, build it from unlabeled copies the
+same way as `latest`; re-tagging an expiring list would inherit its expiry.
 
 ### CI secrets
 
