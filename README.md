@@ -415,9 +415,9 @@ the identical fix in #10568, and was deleted the same day.
 
 Every nightly leaves 12 tags behind (3 flavours × `<sha>`, `<sha>-amd64`,
 `<sha>-arm64`, plus the floating one). Per-commit tags now carry
-`quay.expires-after=30d` — as a LABEL on the per-arch images (set at build)
+`quay.expires-after=14d` — as a LABEL on the per-arch images (set at build)
 and as an ANNOTATION on the `<sha>` manifest lists (set at assembly). Quay
-expires them 30 days after push and garbage-collects 14 days after that. The
+expires them 14 days after push and garbage-collects 14 days after that. The
 floating tags (`latest`, `relay-latest`, `redis-rest-latest`) carry neither
 and never expire. The TTL is `QUAY_TAG_TTL` in `build.yml`.
 

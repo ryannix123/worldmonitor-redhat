@@ -31,7 +31,7 @@ env:
   # leave a live tag unpullable. Expired tags sit in Quay's time machine (14 d)
   # before GC, so a mistake is recoverable. Without this, every nightly left
   # 12 tags behind forever.
-  QUAY_TAG_TTL: 30d
+  QUAY_TAG_TTL: 14d
 
 jobs:
   # Resolve the upstream commit ONCE so every matrix leg builds the identical
