@@ -32,15 +32,22 @@ log() { printf '[entrypoint] %s\n' "$*" >&2; }
 # --- Docker secrets → env bridge --------------------------------------------
 # Kept for docker-compose parity. On OpenShift, Secrets arrive as env vars or
 # mounted files and this loop simply finds nothing.
+#
+# Podman on a subscription-registered host (RHEL, or a registered Fedora /
+# podman-machine VM) auto-mounts the RHSM bundle into EVERY container as
+# /run/secrets/redhat.repo, /run/secrets/rhsm/ and /run/secrets/etc-pki-
+# entitlement/ (see containers-mounts.conf(5)). That is what lets `dnf` work
+# inside UBI containers; it is not a secret for us. On 2026-11-24 the app
+# container died on `export "redhat.repo=..."` because the name check below
+# was a glob, not a regex: in a shell `case`, `[A-Za-z0-9_]*` matches ANY
+# suffix, dots included. The check is now a real identifier test.
 if [ -d /run/secrets ]; then
   for secret_file in /run/secrets/*; do
     [ -f "$secret_file" ] || continue
     key="$(basename "$secret_file")"
-    # Only bridge plausible env var names — a stray file like ..data (which
-    # Kubernetes creates in projected volumes) must not become an export.
     case "$key" in
-      [A-Za-z_][A-Za-z0-9_]*) ;;
-      *) continue ;;
+      redhat.repo|rhsm|etc-pki-entitlement) continue ;;   # RHSM auto-mounts, by name
+      ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;;              # not a valid env var name
     esac
     value="$(tr -d '\n' < "$secret_file")"
     export "$key=$value"
