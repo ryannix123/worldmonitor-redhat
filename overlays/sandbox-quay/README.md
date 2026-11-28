@@ -36,7 +36,7 @@ is fine for a public-data demo.
 
 | | sandbox | sandbox-quay |
 |---|---|---|
-| Image source | in-cluster BuildConfig | quay.io/ryan_nix/worldmonitor-openshift |
+| Image source | in-cluster BuildConfig | quay.io/ryan_nix/worldmonitor |
 | Build time | ~5 min | none (pull only) |
 | ImageStream + trigger | yes | removed |
 | Everything else | identical | identical |

@@ -20,7 +20,15 @@ on:
 env:
   REGISTRY: quay.io
   IMAGE_NS: ryan_nix
-  IMAGE_NAME: worldmonitor-openshift
+  IMAGE_NAME: worldmonitor
+  # The repo was `worldmonitor-openshift` until 2026-11-28. Deployments that
+  # haven't pulled the rename (a NUC on old Quadlets, an un-pulled checkout)
+  # still track the old repo's floating tags, so the manifest job mirrors
+  # latest / relay-latest / redis-rest-latest there until LEGACY_MIRROR_UNTIL.
+  # After that date the mirror is skipped; delete these two lines and the
+  # mirror block whenever convenient.
+  LEGACY_IMAGE_NAME: worldmonitor-openshift
+  LEGACY_MIRROR_UNTIL: "2026-12-31"
   UPSTREAM_REPO: koala73/worldmonitor
   # How long per-commit tags live on Quay. Quay reads `quay.expires-after` only
   # as a LABEL on images; it IGNORES annotations on manifest lists, and gives a
@@ -320,7 +328,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RELAY_IMAGE: worldmonitor-ais-relay        # local build tag
-      IMAGE_NAME: worldmonitor-openshift          # shared Quay repo (push dest)
+      IMAGE_NAME: worldmonitor                    # shared Quay repo (push dest)
     steps:
       - uses: actions/checkout@v4
 
@@ -495,7 +503,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "$QUAY_PASS" | podman login -u "$QUAY_USER" --password-stdin "${REGISTRY}"
-          # Relay shares the app's Quay repo (worldmonitor-openshift) under a
+          # Relay shares the app's Quay repo (worldmonitor) under a
           # relay- tag prefix, rather than a second repo. One repo, one set of
           # robot permissions. IMAGE_NAME is the shared repo; RELAY_IMAGE stays
           # the local build tag only.
@@ -528,7 +536,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PROXY_IMAGE: worldmonitor-redis-rest        # local build tag
-      IMAGE_NAME: worldmonitor-openshift          # shared Quay repo (push dest)
+      IMAGE_NAME: worldmonitor                    # shared Quay repo (push dest)
     steps:
       - uses: actions/checkout@v4
 
@@ -680,7 +688,7 @@ jobs:
       # the file later.
       REGISTRY: quay.io
       IMAGE_NS: ryan_nix
-      IMAGE_NAME: worldmonitor-openshift
+      IMAGE_NAME: worldmonitor
     steps:
       - name: Assemble manifest list
         env:
@@ -727,6 +735,16 @@ jobs:
             done
             podman manifest push --all "${DEST}:${list_b}" "docker://${DEST}:${list_b}"
             echo "pushed ${DEST}:${list_b} (no expiry)"
+
+            # Transition mirror (see LEGACY_* in the workflow env). Floating
+            # tag only, same index, no expiry. A mirror failure warns rather
+            # than failing the run: the new repo is the source of truth.
+            if [[ "$(date -u +%F)" < "${LEGACY_MIRROR_UNTIL}" || "$(date -u +%F)" == "${LEGACY_MIRROR_UNTIL}" ]]; then
+              LEGACY="${REGISTRY}/${IMAGE_NS}/${LEGACY_IMAGE_NAME}"
+              podman manifest push --all "${DEST}:${list_b}" "docker://${LEGACY}:${list_b}" \
+                && echo "mirrored ${LEGACY}:${list_b} (until ${LEGACY_MIRROR_UNTIL})" \
+                || echo "::warning::legacy mirror to ${LEGACY}:${list_b} failed; new repo is unaffected"
+            fi
           }
           assemble "${SHORT}"            "${SHORT}"            "latest"
           assemble "relay-${SHORT}"      "relay-${SHORT}"      "relay-latest"

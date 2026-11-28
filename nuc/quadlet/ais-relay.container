@@ -8,7 +8,7 @@ After=redis-rest.service
 
 [Container]
 ContainerName=ais-relay
-Image=quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+Image=quay.io/ryan_nix/worldmonitor:relay-latest
 AutoUpdate=registry
 Network=worldmonitor.network
 EnvironmentFile=%h/.config/worldmonitor/.env

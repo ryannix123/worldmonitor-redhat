@@ -18,12 +18,12 @@ images:
   # base sets to the full internal-registry path (a placeholder the trigger
   # annotation used to overwrite). Match that exact string.
   - name: image-registry.openshift-image-registry.svc:5000/openshift/worldmonitor
-    newName: quay.io/ryan_nix/worldmonitor-openshift
+    newName: quay.io/ryan_nix/worldmonitor
     newTag: latest
   # Relay shares the app's Quay repo under a relay- tag prefix (see CI build.yml)
   # rather than a separate repo — one repo, one set of robot permissions.
   - name: image-registry.openshift-image-registry.svc:5000/openshift/worldmonitor-ais-relay
-    newName: quay.io/ryan_nix/worldmonitor-openshift
+    newName: quay.io/ryan_nix/worldmonitor
     newTag: relay-latest
 
 patches:

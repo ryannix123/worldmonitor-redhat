@@ -190,9 +190,9 @@ fi
 
 # ---- 7. pull + start ----------------------------------------------------------
 log "Pulling images as $WM_USER (first time only — a few minutes)"
-IMAGES="quay.io/ryan_nix/worldmonitor-openshift:latest
-        quay.io/ryan_nix/worldmonitor-openshift:relay-latest
-        quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest
+IMAGES="quay.io/ryan_nix/worldmonitor:latest
+        quay.io/ryan_nix/worldmonitor:relay-latest
+        quay.io/ryan_nix/worldmonitor:redis-rest-latest
         docker.io/library/redis:8-alpine"
 [ "$WITH_OPENCLAW" = 1 ] && IMAGES="$IMAGES quay.io/ryan_nix/openclaw-openshift:latest"
 for img in $IMAGES; do
