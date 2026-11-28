@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: srh
-          image: quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest
+          image: quay.io/ryan_nix/worldmonitor:redis-rest-latest
           # A moving tag needs an explicit pull policy: the default for a
           # non-:latest-suffixed tag is IfNotPresent, and even with :latest a
           # cached layer on the node would silently pin an old build.

@@ -19,7 +19,7 @@
 # =============================================================================
 services:
   worldmonitor:
-    image: quay.io/ryan_nix/worldmonitor-openshift:latest
+    image: quay.io/ryan_nix/worldmonitor:latest
     platform: linux/arm64
     pull_policy: missing
     ports:
@@ -115,7 +115,7 @@ services:
     restart: unless-stopped
 
   ais-relay:
-    image: quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+    image: quay.io/ryan_nix/worldmonitor:relay-latest
     platform: linux/arm64
     pull_policy: missing
     environment:
@@ -157,7 +157,7 @@ services:
     restart: unless-stopped
 
   redis-rest:
-    image: quay.io/ryan_nix/worldmonitor-openshift:redis-rest-latest
+    image: quay.io/ryan_nix/worldmonitor:redis-rest-latest
     platform: linux/arm64
     pull_policy: missing
     environment:
@@ -193,7 +193,7 @@ services:
   #   • Sector Heatmap + BTC Regime + Macro Stress stay down regardless — dead
   #     upstreams (Yahoo quoteSummary 401 etc.), not a seeding problem.
   seeders:
-    image: quay.io/ryan_nix/worldmonitor-openshift:relay-latest
+    image: quay.io/ryan_nix/worldmonitor:relay-latest
     platform: linux/arm64
     pull_policy: missing
     environment:

@@ -10,7 +10,7 @@ After=redis-rest.service ais-relay.service
 
 [Container]
 ContainerName=worldmonitor
-Image=quay.io/ryan_nix/worldmonitor-openshift:latest
+Image=quay.io/ryan_nix/worldmonitor:latest
 AutoUpdate=registry
 Network=worldmonitor.network
 PublishPort=3000:8080

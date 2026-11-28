@@ -58,7 +58,7 @@ compose() {
 # commit it was built from. Printing it is the only reliable way to see whether
 # `latest`, `relay-latest` and `redis-rest-latest` actually moved together —
 # the tag names never change, so a stale one is invisible otherwise.
-REPO_IMG="quay.io/ryan_nix/worldmonitor-openshift"
+REPO_IMG="quay.io/ryan_nix/worldmonitor"
 show_versions() {
   local tag rev
   for tag in latest relay-latest redis-rest-latest; do
@@ -225,6 +225,15 @@ do_update() {
   local pruned
   pruned="$(podman image prune -f 2>/dev/null | wc -l | tr -d ' ')"
   [ "${pruned:-0}" -gt 0 ] && info "Pruned $pruned superseded image layer(s)"
+  # One-time cleanup after the 2026-11-28 rename (worldmonitor-openshift ->
+  # worldmonitor): the old images are still TAGGED, so prune leaves them.
+  # rmi refuses anything a container still uses, so this is safe to run always.
+  local old
+  old="$(podman images --format '{{.Repository}}:{{.Tag}}' | grep '^quay.io/ryan_nix/worldmonitor-openshift:' || true)"
+  if [ -n "$old" ]; then
+    # shellcheck disable=SC2086
+    podman rmi $old >/dev/null 2>&1 && info "Removed images from the old worldmonitor-openshift repo"
+  fi
   echo
   info "After:"; show_versions
   ok "Updated and running.  $URL"

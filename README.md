@@ -58,11 +58,13 @@ machine, no cluster required. The OpenShift section below argues for the enforce
 posture; the Podman path trades that enforcement for a two-command start on a
 laptop. Same app, you pick the amount of platform.
 
-> **On the image name.** This project started as OpenShift-only, so the images
-> live at `quay.io/ryan_nix/worldmonitor-openshift`. The local Podman path was
-> added later and pulls those same images — the `-openshift` in the name is
-> historical, not a constraint. Keeping the name stable means every overlay and
-> compose reference keeps working; renaming it would buy nothing but churn.
+> **On the image name.** The images live at `quay.io/ryan_nix/worldmonitor`,
+> one repo with the three components told apart by tag (`latest`,
+> `relay-latest`, `redis-rest-latest`). They run unchanged on OpenShift, on
+> Podman on a laptop, and on the NUC, so the name says what's in them, not
+> where they run. Until 2026-12-31 CI also mirrors the three floating tags to
+> the old `worldmonitor-openshift` repo, so a deployment that hasn't pulled
+> the rename yet keeps updating; after that the old repo stops moving.
 
 ## Engineering highlights
 
@@ -388,7 +390,8 @@ Nightly at 07:00 UTC (02:00 CDT), plus on push and manual dispatch:
 - Syft SBOM + Grype scan per image, published to the run summary and retained as
   an artifact. No severity gate — the scan reports, it doesn't block
 - Pushes `<sha>`, `relay-<sha>`, `redis-rest-<sha>` and their `latest` tags to
-  `quay.io/ryan_nix/worldmonitor-openshift`
+  `quay.io/ryan_nix/worldmonitor` (floating tags mirrored to the old
+  `worldmonitor-openshift` repo until 2026-12-31)
 
 `upstream-sync.yml` opens a bump PR every Monday, since upstream ships from
 `main` and stopped tagging ~5 months ago. It flags changes to build-relevant
